@@ -53,6 +53,24 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), paste a YouTube URL, and click **Start**.
 
+## Deploy
+
+- **GitHub:** https://github.com/BenMacklinn/live-youtube-chyron
+- **Vercel (frontend):** https://frontend-gamma-six-12.vercel.app
+
+The Next.js UI deploys on Vercel. The Python backend (WebSockets, `ffmpeg`, `yt-dlp`) must run on a separate host such as Railway, Render, or a VPS.
+
+In the Vercel project settings, set **Root Directory** to `frontend` if Git deploys fail from the monorepo root.
+
+Required Vercel environment variables once the backend is live:
+
+| Variable | Example |
+|----------|---------|
+| `NEXT_PUBLIC_BACKEND_URL` | `https://your-backend.example.com` |
+| `BACKEND_URL` | `https://your-backend.example.com` |
+
+`NEXT_PUBLIC_BACKEND_URL` is used for the live WebSocket. `BACKEND_URL` is used for `/api/*` rewrites from Next.js.
+
 ## Configuration
 
 | Variable | Default | Description |
