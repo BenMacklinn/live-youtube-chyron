@@ -1,0 +1,12 @@
+.env
+.env.local
+.env*.local
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+frontend/node_modules/
+frontend/.next/
+.vercel/
+.DS_Store
+test-out.txt
+*.pyc
