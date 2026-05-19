@@ -2,7 +2,6 @@ import "server-only";
 
 import { spawn } from "node:child_process";
 import OpenAI, { toFile } from "openai";
-import ytdl from "@distube/ytdl-core";
 import ffmpegPath from "ffmpeg-static";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, LiveSessionRow } from "@/lib/supabase/types";
@@ -11,6 +10,7 @@ import { liveConfig } from "./config";
 import { publishSessionEvent } from "./events";
 import { dedupeOverlap, headChars, tailChars } from "./text";
 import { audioBytesForSeconds, usagePayload } from "./usage";
+import { resolveYouTubeAudioUrl } from "./youtube-audio";
 
 const SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
 
@@ -90,7 +90,7 @@ async function processOneChunk(
 ) {
   const offsetSec = Number(session.next_offset_sec || session.start_sec || 0);
   const durationSec = liveConfig.transcriptionChunkSec + Math.max(0, liveConfig.transcriptionOverlapSec);
-  const audioUrl = await resolveAudioUrl(session.youtube_url);
+  const audioUrl = await resolveYouTubeAudioUrl(session.youtube_url);
   const wav = await extractWavChunk(audioUrl, offsetSec, durationSec);
   const transcriptText = await transcribeChunk(openai, wav, session.id);
   const deduped = dedupeOverlap(session.last_transcript_text, transcriptText);
@@ -280,20 +280,6 @@ async function transcribeChunk(openai: OpenAI, wav: Buffer, sessionId: string) {
   });
 
   return String(transcript.text ?? "").trim();
-}
-
-async function resolveAudioUrl(youtubeUrl: string) {
-  const info = await ytdl.getInfo(youtubeUrl);
-  const format = ytdl.chooseFormat(info.formats, {
-    quality: "highestaudio",
-    filter: "audioonly",
-  });
-
-  if (!format?.url) {
-    throw new Error("Could not resolve YouTube audio URL");
-  }
-
-  return format.url;
 }
 
 function extractWavChunk(audioUrl: string, offsetSec: number, durationSec: number): Promise<Buffer> {

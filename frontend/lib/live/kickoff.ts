@@ -1,7 +1,16 @@
 import { getInternalProcessSecret } from "./internal";
 
-export async function kickOffProcessing(origin: string, sessionId: string) {
-  const response = await fetch(`${origin}/api/sessions/${sessionId}/process`, {
+/** Prefer stable production host for server-side fetch (avoids SSO on deployment URLs). */
+export function getProcessingBaseUrl(requestOrigin: string): string {
+  const productionHost = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (productionHost) return `https://${productionHost}`;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return requestOrigin;
+}
+
+export async function kickOffProcessing(requestOrigin: string, sessionId: string) {
+  const baseUrl = getProcessingBaseUrl(requestOrigin);
+  const response = await fetch(`${baseUrl}/api/sessions/${sessionId}/process`, {
     method: "POST",
     headers: {
       "x-process-secret": getInternalProcessSecret(),

@@ -20,10 +20,10 @@ export async function POST(request: Request, { params }: Params) {
   const result = await processSessionRun(sessionId);
 
   if (result.shouldContinue) {
-    const origin = new URL(request.url).origin;
+    const requestOrigin = new URL(request.url).origin;
     after(async () => {
       try {
-        await kickOffProcessing(origin, sessionId);
+        await kickOffProcessing(requestOrigin, sessionId);
       } catch (error) {
         console.error("Failed to continue processing", error);
       }

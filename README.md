@@ -53,6 +53,18 @@ Required Vercel environment variables:
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...` |
 | `SUPABASE_SECRET_KEY` | Supabase secret/service role key |
 | `INTERNAL_PROCESS_SECRET` | Random long string used by chained chunk jobs |
+| `YOUTUBE_COOKIES` | JSON cookie array from a logged-in `youtube.com` session (required for Vercel; see below) |
+
+### YouTube cookies (required on Vercel)
+
+YouTube blocks datacenter IPs (including Vercel) with “Sign in to confirm you’re not a bot.” Local dev often works without cookies; production needs them.
+
+1. Log into [youtube.com](https://www.youtube.com) in Chrome (use a throwaway Google account if you prefer).
+2. Install a cookie exporter (e.g. [EditThisCookie](http://www.editthiscookie.com/)) → Export → copies a JSON array.
+3. Set `YOUTUBE_COOKIES` in Vercel (Project → Settings → Environment Variables) to that JSON (single line is fine).
+4. Redeploy. Do not log out of that Google account in the browser session you exported from.
+
+If cookies expire, export fresh ones and update the env var.
 
 Supabase schema migrations live in `supabase/migrations/` and have been applied to the `Live Chyron` project.
 

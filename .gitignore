@@ -1,6 +1,7 @@
 .env
 .env.local
 .env*.local
+.env.vercel*
 backend/.venv/
 backend/__pycache__/
 backend/**/__pycache__/
