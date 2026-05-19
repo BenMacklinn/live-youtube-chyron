@@ -17,8 +17,8 @@ function useSecondsUntil(targetUnixSec: number | null | undefined, active: boole
 
   useEffect(() => {
     if (!active || !targetUnixSec) {
-      setSeconds(null);
-      return;
+      const resetId = window.setTimeout(() => setSeconds(null), 0);
+      return () => window.clearTimeout(resetId);
     }
 
     const tick = () => {
@@ -26,9 +26,12 @@ function useSecondsUntil(targetUnixSec: number | null | undefined, active: boole
       setSeconds(remaining > 0 ? remaining : 0);
     };
 
-    tick();
+    const tickId = window.setTimeout(tick, 0);
     const id = window.setInterval(tick, 250);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearTimeout(tickId);
+      window.clearInterval(id);
+    };
   }, [targetUnixSec, active]);
 
   return seconds;

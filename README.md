@@ -6,31 +6,20 @@ Approved chyrons appear as plain text with copy/download — no external display
 
 ## Prerequisites
 
-- **Python 3.11+**
 - **Node.js 18+**
-- **ffmpeg** — `brew install ffmpeg`
-- **yt-dlp** — installed via `pip install -r requirements.txt` in the backend venv (uses `python -m yt_dlp`, not the system binary)
 - **OpenAI API key** with transcription access
+- **Supabase project** — this repo is wired for `Live Chyron` (`xrbbbebtxjekvwkyuloe`)
 
 ## Setup
 
 1. Copy environment file and add your API key:
 
 ```bash
-cp .env.example .env
-# Edit .env and set OPENAI_API_KEY=sk-...
+cp .env.example frontend/.env.local
+# Edit frontend/.env.local and set OPENAI_API_KEY and SUPABASE_SECRET_KEY.
 ```
 
-2. Install backend dependencies (use Python 3.11+; `python3` on some systems may need to be `python3.11`):
-
-```bash
-cd backend
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-3. Install frontend dependencies:
+2. Install frontend dependencies:
 
 ```bash
 cd frontend
@@ -39,15 +28,10 @@ npm install
 
 ## Run
 
-**Terminal 1 — backend** (from `backend/` with venv active):
+Run the Vercel-hosted Next.js app locally:
 
 ```bash
-uvicorn main:app --reload --port 8000
-```
-
-**Terminal 2 — frontend** (from `frontend/`):
-
-```bash
+cd frontend
 npm run dev
 ```
 
@@ -58,18 +42,19 @@ Open [http://localhost:3000](http://localhost:3000), paste a YouTube URL, and cl
 - **GitHub:** https://github.com/BenMacklinn/live-youtube-chyron
 - **Vercel (frontend):** https://frontend-gamma-six-12.vercel.app
 
-The Next.js UI deploys on Vercel. The Python backend (WebSockets, `ffmpeg`, `yt-dlp`) must run on a separate host such as Railway, Render, or a VPS.
+The production app runs on Vercel with Supabase handling durable state and realtime delivery. The legacy Python backend remains in `backend/` as a local/reference implementation, but the production path uses Next.js route handlers under `frontend/app/api`.
 
-In the Vercel project settings, set **Root Directory** to `frontend` if Git deploys fail from the monorepo root.
-
-Required Vercel environment variables once the backend is live:
+Required Vercel environment variables:
 
 | Variable | Example |
 |----------|---------|
-| `NEXT_PUBLIC_BACKEND_URL` | `https://your-backend.example.com` |
-| `BACKEND_URL` | `https://your-backend.example.com` |
+| `OPENAI_API_KEY` | `sk-...` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://xrbbbebtxjekvwkyuloe.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...` |
+| `SUPABASE_SECRET_KEY` | Supabase secret/service role key |
+| `INTERNAL_PROCESS_SECRET` | Random long string used by chained chunk jobs |
 
-`NEXT_PUBLIC_BACKEND_URL` is used for the live WebSocket. `BACKEND_URL` is used for `/api/*` rewrites from Next.js.
+Supabase schema migrations live in `supabase/migrations/` and have been applied to the `Live Chyron` project.
 
 ## Configuration
 
@@ -82,30 +67,26 @@ Required Vercel environment variables once the backend is live:
 | `TRANSCRIPTION_MODEL` | `gpt-4o-mini-transcribe` | OpenAI transcription model |
 | `TRANSCRIPTION_CHUNK_SEC` | `6` | Seconds of audio per transcription request |
 | `TRANSCRIPTION_OVERLAP_SEC` | `0.75` | Audio overlap between chunks to reduce boundary drops |
-| `FRONTEND_URL` | `http://localhost:3000` | CORS origin |
-| `BACKEND_URL` | `http://localhost:8000` | Backend URL for Next.js rewrites |
-
-Frontend WebSocket connects directly to `NEXT_PUBLIC_BACKEND_URL` (defaults to `http://localhost:8000`).
+| `CHUNKS_PER_RUN` | `3` | Number of chunks processed by each bounded Vercel invocation before chaining |
 
 ## Tests
 
 ```bash
-cd backend
-source .venv/bin/activate
-python tests/test_context_buffer.py
-curl http://localhost:8000/health
+cd frontend
+npm run lint
+npm run build
 ```
 
 ## Architecture
 
 ```
-YouTube URL → yt-dlp + ffmpeg (24kHz PCM) → 6s WAV chunks → OpenAI gpt-4o-mini-transcribe
-                                                                    ↓
-                                                          Rolling transcript buffer (30–90s)
-                                                                    ↓
+YouTube URL → Vercel chunk route → ffmpeg-static WAV chunk → OpenAI gpt-4o-mini-transcribe
+                                                                     ↓
+                                                          Supabase session context + transcript rows
+                                                                     ↓
                                                           Event-aware → gpt-5.4-mini chyron batch
-                                                                    ↓
-                                                          Producer approve/edit/reject → text output
+                                                                     ↓
+                                                          Supabase Realtime → producer dashboard
 ```
 
 ## API
@@ -113,7 +94,12 @@ YouTube URL → yt-dlp + ffmpeg (24kHz PCM) → 6s WAV chunks → OpenAI gpt-4o-
 - `POST /api/sessions` — `{ "youtubeUrl": "...", "mode": "chyron", "contextWindowSec": 60 }`
 - `POST /api/sessions/{id}/stop` — stop session
 - `GET /api/sessions/{id}` — session state
-- `WS /ws/sessions/{id}` — live events + approve/reject actions, plus `context.clear` to reset topic memory for a new guest or segment
+- `POST /api/sessions/{id}/approve` — approve a chyron
+- `POST /api/sessions/{id}/reject` — reject a chyron
+- `POST /api/sessions/{id}/mode` — switch `chyron` / `verbatim`
+- `POST /api/sessions/{id}/clear-context` — reset rolling context
+
+Live updates arrive through Supabase Realtime `session_events` rows.
 
 ## Modes
 

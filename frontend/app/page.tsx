@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { ModeToggle } from "@/components/ModeToggle";
@@ -8,16 +8,21 @@ import { UsagePanel } from "@/components/UsagePanel";
 import { YouTubeInput } from "@/components/YouTubeInput";
 import { YouTubePlayer } from "@/components/YouTubePlayer";
 import {
+  approveChyron,
+  clearSessionContext,
   createSession,
+  getSessionSnapshot,
   parseStartTime,
-  sessionWebSocketUrl,
+  rejectChyron,
+  setSessionMode,
   stopSession,
   type ApprovedLogEntry,
   type ChyronSuggestions as ChyronSuggestionsType,
+  type LiveMessage,
   type SessionMode,
   type UsageStats,
-  type WsMessage,
 } from "@/lib/api";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -37,18 +42,12 @@ export default function Home() {
   const [playerStartSec, setPlayerStartSec] = useState(0);
   const [contextNotice, setContextNotice] = useState("");
   const [nextChyronBatchAt, setNextChyronBatchAt] = useState<number | null>(null);
-
-  const wsRef = useRef<WebSocket | null>(null);
+  const [liveConnection, setLiveConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
+  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
 
   const isRunning = status === "connecting" || status === "transcribing";
 
-  const sendWs = useCallback((payload: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(payload));
-    }
-  }, []);
-
-  const handleMessage = useCallback((msg: WsMessage) => {
+  const handleMessage = useCallback((msg: LiveMessage) => {
     switch (msg.type) {
       case "session.status":
         setStatus(msg.status);
@@ -117,20 +116,60 @@ export default function Home() {
   useEffect(() => {
     if (!sessionId) return;
 
-    const ws = new WebSocket(sessionWebSocketUrl(sessionId));
-    wsRef.current = ws;
+    let cancelled = false;
+    const connectingTimer = window.setTimeout(() => setLiveConnection("connecting"), 0);
 
-    ws.onmessage = (event) => {
-      handleMessage(JSON.parse(event.data) as WsMessage);
-    };
+    getSessionSnapshot(sessionId)
+      .then((snapshot) => {
+        if (cancelled) return;
+        setStatus(snapshot.status);
+        setMode(snapshot.mode);
+        setUrl(snapshot.youtubeUrl);
+        setPlayerStartSec(snapshot.startSec);
+        setSegments(snapshot.segments);
+        setPartial("");
+        setSuggestions(snapshot.latestSuggestions);
+        setVerbatimCaption(snapshot.latestVerbatim);
+        setActiveChyron(snapshot.activeChyron);
+        setApprovedLog(snapshot.approvedLog);
+        setUsage(snapshot.usage);
+        setError(snapshot.error);
+        setNextChyronBatchAt(snapshot.latestSuggestions?.nextBatchAt ?? null);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load session");
+      });
 
-    ws.onerror = () => setError("WebSocket connection error");
+    const channel = supabase
+      .channel(`session-events:${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "session_events",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => {
+          const message = payload.new.payload as LiveMessage;
+          handleMessage(message);
+        },
+      )
+      .subscribe((subscriptionStatus) => {
+        if (subscriptionStatus === "SUBSCRIBED") {
+          setLiveConnection("live");
+        } else if (subscriptionStatus === "CHANNEL_ERROR" || subscriptionStatus === "TIMED_OUT" || subscriptionStatus === "CLOSED") {
+          setLiveConnection("reconnecting");
+        }
+      });
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      cancelled = true;
+      window.clearTimeout(connectingTimer);
+      setLiveConnection("idle");
+      supabase.removeChannel(channel);
     };
-  }, [sessionId, handleMessage]);
+  }, [sessionId, handleMessage, supabase]);
 
   const handleStart = async () => {
     setStarting(true);
@@ -166,26 +205,45 @@ export default function Home() {
         /* session may already be ended */
       }
     }
-    wsRef.current?.close();
     setStatus("ended");
   };
 
-  const handleModeChange = (next: SessionMode) => {
+  const handleModeChange = async (next: SessionMode) => {
     setMode(next);
-    sendWs({ type: "mode.set", mode: next });
+    if (!sessionId) return;
+    try {
+      await setSessionMode(sessionId, next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to set mode");
+    }
   };
 
-  const handleApprove = (id: string, text: string) => {
-    sendWs({ type: "chyron.approve", id, text });
+  const handleApprove = async (id: string, text: string) => {
     setActiveChyron(text);
+    if (!sessionId) return;
+    try {
+      await approveChyron(sessionId, id, text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to approve chyron");
+    }
   };
 
-  const handleReject = (id: string, text: string) => {
-    sendWs({ type: "chyron.reject", id, text });
+  const handleReject = async (id: string, text: string) => {
+    if (!sessionId) return;
+    try {
+      await rejectChyron(sessionId, id, text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reject chyron");
+    }
   };
 
-  const handleClearContext = () => {
-    sendWs({ type: "context.clear" });
+  const handleClearContext = async () => {
+    if (!sessionId) return;
+    try {
+      await clearSessionContext(sessionId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to clear context");
+    }
   };
 
   return (
@@ -224,6 +282,7 @@ export default function Home() {
           <p className="text-sm text-zinc-500">
             Status: <span className="font-medium capitalize text-zinc-800 dark:text-zinc-200">{status}</span>
             {sessionId && <span className="ml-2 font-mono text-xs text-zinc-400">({sessionId.slice(0, 8)}…)</span>}
+            {sessionId && <span className="ml-2 capitalize text-zinc-400">Live: {liveConnection}</span>}
           </p>
         </div>
 

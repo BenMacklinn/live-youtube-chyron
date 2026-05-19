@@ -13,6 +13,8 @@ export type ChyronSuggestions = {
   entities: string[];
   chyronOptions: ChyronOption[];
   verbatimCaption: string;
+  chyronCadenceSec?: number;
+  nextBatchAt?: number;
 };
 
 export type ApprovedLogEntry = {
@@ -35,7 +37,7 @@ export type UsageStats = {
   chyronModel: string;
 };
 
-export type WsMessage =
+export type LiveMessage =
   | { type: "session.status"; status: string; error?: string }
   | { type: "usage.update"; audioSeconds: number; audioMinutes: number; chyronInputTokens: number; chyronOutputTokens: number; chyronRequests: number; transcriptionCostUsd: number; chyronCostUsd: number; totalCostUsd: number; realtimeModel: string; transcriptionModel?: string; transcriptionPricePerMin?: number; chyronModel: string }
   | { type: "transcript.delta"; itemId: string; delta: string }
@@ -57,7 +59,20 @@ export type WsMessage =
   | { type: "mode.changed"; mode: SessionMode }
   | { type: "context.cleared"; timestamp: number };
 
-const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+export type SessionSnapshot = {
+  sessionId: string;
+  status: string;
+  mode: SessionMode;
+  startSec: number;
+  youtubeUrl: string;
+  activeChyron: string;
+  approvedLog: ApprovedLogEntry[];
+  segments: string[];
+  latestSuggestions: ChyronSuggestions | null;
+  latestVerbatim: string;
+  usage: UsageStats | null;
+  error: string | null;
+};
 
 export function parseStartTime(value: string): number {
   const trimmed = value.trim();
@@ -96,7 +111,36 @@ export async function stopSession(sessionId: string) {
   if (!res.ok) throw new Error("Failed to stop session");
 }
 
-export function sessionWebSocketUrl(sessionId: string) {
-  const wsBase = backendUrl.replace(/^http/, "ws");
-  return `${wsBase}/ws/sessions/${sessionId}`;
+export async function getSessionSnapshot(sessionId: string) {
+  const res = await fetch(`/api/sessions/${sessionId}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to load session");
+  return res.json() as Promise<SessionSnapshot>;
+}
+
+export async function approveChyron(sessionId: string, id: string, text: string) {
+  await postSessionAction(sessionId, "approve", { id, text });
+}
+
+export async function rejectChyron(sessionId: string, id: string, text: string) {
+  await postSessionAction(sessionId, "reject", { id, text });
+}
+
+export async function setSessionMode(sessionId: string, mode: SessionMode) {
+  await postSessionAction(sessionId, "mode", { mode });
+}
+
+export async function clearSessionContext(sessionId: string) {
+  await postSessionAction(sessionId, "clear-context", {});
+}
+
+async function postSessionAction(sessionId: string, action: string, payload: object) {
+  const res = await fetch(`/api/sessions/${sessionId}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Failed to ${action}`);
+  }
 }
