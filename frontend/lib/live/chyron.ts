@@ -40,13 +40,13 @@ const JSON_SCHEMA = `Respond with JSON only:
 
 const GUEST_SYSTEM_PROMPT = `You generate live broadcast chyrons for a GUEST segment.
 
-Generation mode: Guest — a named guest is on air. The producer set who they are and their company/show.
+Generation mode: Guest — same headline style as timeline: topic-first, concrete, complete phrases within the character limit.
 
 Your chyrons should:
-- Center on the guest and what they are discussing right now
-- Anchor every option to the guest — last name, company/show, or role is enough; full first + last name only when it fits with the topic
-- Pull the subject from the recent transcript; connect the guest to the live topic, not generic interview filler
-- Write tight interview-style lower-thirds: who is on air + what they are talking about
+- Capture the current news beat — the topic, story, or development being discussed
+- Ground headlines in concrete nouns from the transcript: people, places, organizations, events, numbers
+- Use guest name or company from the user message only when it fits naturally — never force name or company into every line
+- Lead with the story; add guest or org detail only when there is room
 
 ${SHARED_RULES}
 
@@ -90,16 +90,7 @@ export type ChyronOptionRow = {
   rationale: string;
 };
 
-export function isGuestMode(session: LiveSessionRow) {
-  return session.generation_mode === "guest";
-}
-
-export function guestContextReady(session: LiveSessionRow) {
-  return Boolean(session.guest_name?.trim()) && Boolean(session.guest_company?.trim());
-}
-
-export function shouldGenerateChyrons(session: LiveSessionRow) {
-  if (isGuestMode(session) && !guestContextReady(session)) return false;
+export function shouldGenerateChyrons(_session: LiveSessionRow) {
   return true;
 }
 
@@ -133,13 +124,17 @@ export function buildChyronPrompt(
   const parts = buildContextParts(session, recentTranscript);
 
   if (mode === "guest") {
-    const guestName = session.guest_name?.trim() ?? "";
-    const guestCompany = session.guest_company?.trim() ?? "";
-    parts.push(
-      `On-air guest (required context — every chyron should tie to this guest):\nName: ${guestName}\nCompany / show: ${guestCompany}`,
-    );
+    const guestName = session.guest_name?.trim();
+    const guestCompany = session.guest_company?.trim();
+    if (guestName || guestCompany) {
+      parts.push(
+        `Optional on-air guest context (include in a chyron only when it fits — not required on every line):\nName: ${guestName || "—"}\nCompany / show: ${guestCompany || "—"}`,
+      );
+    } else {
+      parts.push("Guest segment mode — topic-driven headlines from the transcript (same style as timeline).");
+    }
   } else {
-    parts.push("No guest segment — topic-driven headlines only.");
+    parts.push("Timeline mode — topic-driven headlines from the transcript.");
   }
 
   if (approved.length > 0) {
