@@ -1,7 +1,10 @@
 import "server-only";
 
+import type { StreamSourcePreset } from "@/lib/stream-sources";
+
 const DIRECT_STREAM_PROTOCOLS = new Set(["http:", "https:", "rtmp:", "rtmps:"]);
-const DEFAULT_STREAM_SOURCE_URL =
+const PRODUCTION_STREAM_RESOLVER = "https://newsmax-delta.vercel.app/api/latest-clipper";
+const TEST_STREAM_URL =
   "https://d35dy04pnq6mdl.cloudfront.net/1/20260519T224132Z/index.m3u8";
 
 export type StreamSourceKind = "hls" | "direct";
@@ -29,9 +32,21 @@ export function resolveStreamInputUrl(sourceUrl: string): string {
   return trimmed;
 }
 
-export async function resolveSessionStreamInputUrl(sourceUrl: string): Promise<string> {
-  const candidate = sourceUrl.trim() || (await loadDefaultStreamInputUrl());
-  return resolveStreamInputUrl(candidate);
+export async function resolveSessionStreamInputUrl(
+  sourceUrl: string,
+  preset: StreamSourcePreset = "production",
+): Promise<string> {
+  const trimmed = sourceUrl.trim();
+  if (trimmed) {
+    return resolveStreamInputUrl(trimmed);
+  }
+
+  if (preset === "test") {
+    const testUrl = process.env.TEST_STREAM_SOURCE_URL?.trim() || TEST_STREAM_URL;
+    return resolveStreamInputUrl(testUrl);
+  }
+
+  return resolveStreamInputUrl(await loadProductionStreamInputUrl());
 }
 
 export function streamSourceKind(sourceUrl: string): StreamSourceKind {
@@ -43,20 +58,16 @@ export function streamSourceKind(sourceUrl: string): StreamSourceKind {
   }
 }
 
-async function loadDefaultStreamInputUrl(): Promise<string> {
-  const endpoint = process.env.DEFAULT_STREAM_SOURCE_URL?.trim() || DEFAULT_STREAM_SOURCE_URL;
-  if (isSupportedStreamSource(endpoint)) {
-    return endpoint;
-  }
-
+async function loadProductionStreamInputUrl(): Promise<string> {
+  const endpoint = process.env.PRODUCTION_STREAM_SOURCE_URL?.trim() || PRODUCTION_STREAM_RESOLVER;
   const response = await fetch(endpoint, { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`Failed to resolve daily stream URL: ${response.status} ${response.statusText}`);
+    throw new Error(`Failed to resolve production stream URL: ${response.status} ${response.statusText}`);
   }
 
   const text = (await response.text()).trim();
   if (!text) {
-    throw new Error("Daily stream resolver returned an empty response");
+    throw new Error("Production stream resolver returned an empty response");
   }
 
   try {
@@ -65,7 +76,7 @@ async function loadDefaultStreamInputUrl(): Promise<string> {
       return payload.url.trim();
     }
   } catch {
-    // Some resolvers may return the direct stream URL as plain text.
+    // Some resolvers return the direct stream URL as plain text.
   }
 
   return text;

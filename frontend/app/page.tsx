@@ -23,6 +23,7 @@ import {
   type ChyronSuggestions as ChyronSuggestionsType,
   type LiveMessage,
   type SessionMode,
+  type StreamSourcePreset,
   type UsageStats,
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -40,6 +41,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<SessionMode>("chyron");
   const [generationMode, setGenerationMode] = useState<ChyronGenerationMode>("timeline");
+  const [streamSource, setStreamSource] = useState<StreamSourcePreset>("production");
   const [segments, setSegments] = useState<string[]>([]);
   const [partial, setPartial] = useState("");
   const [suggestions, setSuggestions] = useState<ChyronSuggestionsType | null>(null);
@@ -208,7 +210,7 @@ export default function Home() {
     setGuestDraft(emptyGuestContext());
 
     try {
-      const { sessionId: id } = await createSession("", mode, undefined, 0, generationMode);
+      const { sessionId: id } = await createSession("", mode, undefined, 0, generationMode, streamSource);
       setSessionId(id);
       setStatus("connecting");
     } catch (e) {
@@ -334,6 +336,8 @@ export default function Home() {
         </header>
 
         <YouTubeInput
+          streamSource={streamSource}
+          onStreamSourceChange={setStreamSource}
           sourceUrl={url}
           onStart={handleStart}
           onStop={handleStop}
