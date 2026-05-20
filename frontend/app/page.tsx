@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { ModeToggle } from "@/components/ModeToggle";
@@ -42,9 +42,8 @@ export default function Home() {
   const [nextChyronBatchAt, setNextChyronBatchAt] = useState<number | null>(null);
   const [liveConnection, setLiveConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
   const [producerGuidance, setProducerGuidance] = useState("");
+  const [guidanceDraft, setGuidanceDraft] = useState("");
   const [guidanceSaving, setGuidanceSaving] = useState(false);
-  const guidanceSaveTimer = useRef<number | null>(null);
-  const guidanceLastSaved = useRef("");
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
 
   const isRunning = status === "connecting" || status === "transcribing";
@@ -113,7 +112,7 @@ export default function Home() {
         break;
       case "guidance.updated":
         setProducerGuidance(msg.guidance);
-        guidanceLastSaved.current = msg.guidance;
+        setGuidanceDraft(msg.guidance);
         break;
       default:
         break;
@@ -141,7 +140,7 @@ export default function Home() {
         setUsage(snapshot.usage);
         setError(snapshot.error);
         setProducerGuidance(snapshot.producerGuidance);
-        guidanceLastSaved.current = snapshot.producerGuidance;
+        setGuidanceDraft(snapshot.producerGuidance);
         setNextChyronBatchAt(snapshot.latestSuggestions?.nextBatchAt ?? null);
       })
       .catch((e) => {
@@ -192,7 +191,7 @@ export default function Home() {
     setContextNotice("");
     setNextChyronBatchAt(null);
     setProducerGuidance("");
-    guidanceLastSaved.current = "";
+    setGuidanceDraft("");
 
     try {
       const { sessionId: id } = await createSession("", mode, undefined, 0);
@@ -245,23 +244,21 @@ export default function Home() {
     }
   };
 
-  const handleGuidanceChange = (guidance: string) => {
-    setProducerGuidance(guidance);
+  const handleGuidanceSubmit = async () => {
     if (!sessionId) return;
+    const guidance = guidanceDraft.trim();
+    if (guidance === producerGuidance) return;
 
-    if (guidanceSaveTimer.current) window.clearTimeout(guidanceSaveTimer.current);
-    guidanceSaveTimer.current = window.setTimeout(async () => {
-      if (guidance === guidanceLastSaved.current) return;
-      setGuidanceSaving(true);
-      try {
-        await saveProducerGuidance(sessionId, guidance);
-        guidanceLastSaved.current = guidance;
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to save guidance");
-      } finally {
-        setGuidanceSaving(false);
-      }
-    }, 600);
+    setGuidanceSaving(true);
+    try {
+      await saveProducerGuidance(sessionId, guidance);
+      setProducerGuidance(guidance);
+      setGuidanceDraft(guidance);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save guidance");
+    } finally {
+      setGuidanceSaving(false);
+    }
   };
 
   const handleClearContext = async () => {
@@ -331,10 +328,12 @@ export default function Home() {
         <UsagePanel usage={usage} />
 
         <ProducerGuidance
-          value={producerGuidance}
-          onChange={handleGuidanceChange}
+          value={guidanceDraft}
+          onChange={setGuidanceDraft}
+          onSubmit={handleGuidanceSubmit}
           disabled={!sessionId}
           saving={guidanceSaving}
+          hasUnsavedChanges={guidanceDraft.trim() !== producerGuidance}
         />
 
         <TranscriptChyronColumns
