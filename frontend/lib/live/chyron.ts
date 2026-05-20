@@ -9,8 +9,9 @@ const CHYRON_WRITING = `Writing chyrons (critical — do this before you output 
 1. Draft each headline in ALL CAPS as a complete phrase — a viewer must understand the beat without more context
 2. Count every character (letters, spaces, punctuation). The text must be ${CHYRON_MAX_CHARS} or fewer; aim for ${CHYRON_TARGET_CHARS} or less so you never brush the limit
 3. If the line is too long or ends on a dangling word (to, on, for, with, and, or, the, a, in, of), rewrite shorter — do not truncate, do not cut mid-thought
-4. Prefer shorter structure over cramming: drop words, use tighter nouns, split name/topic across fewer words — never leave an incomplete trailing phrase to fit the limit
-5. Set charCount to text.length for each option; only include options where charCount <= ${CHYRON_MAX_CHARS} and the line reads finished`;
+4. Prefer shorter structure over cramming: drop words, use tighter nouns — never leave an incomplete trailing phrase to fit the limit
+5. When a person's full name eats the limit, do not force it — keep the same style by leading with topic, company, or role instead of first + last name. Use last name only if it still fits; otherwise org or title plus the beat (the story matters more than spelling the whole name)
+6. Set charCount to text.length for each option; only include options where charCount <= ${CHYRON_MAX_CHARS} and the line reads finished`;
 
 const SHARED_RULES = `Shared rules (both modes):
 - Return 3-5 chyron options in ALL CAPS
@@ -43,7 +44,7 @@ Generation mode: Guest — a named guest is on air. The producer set who they ar
 
 Your chyrons should:
 - Center on the guest and what they are discussing right now
-- Anchor every option to the guest — use their name, role, or company/show so the lower-third reads as a guest segment
+- Anchor every option to the guest — last name, company/show, or role is enough; full first + last name only when it fits with the topic
 - Pull the subject from the recent transcript; connect the guest to the live topic, not generic interview filler
 - Write tight interview-style lower-thirds: who is on air + what they are talking about
 
@@ -57,7 +58,7 @@ Generation mode: Timeline — no guest interview framing. Headlines reflect the 
 
 Your chyrons should:
 - Capture the current news beat — the topic, story, or development being discussed
-- Ground headlines in concrete nouns from the transcript: people, places, organizations, events, numbers
+- Ground headlines in concrete nouns from the transcript: people, places, organizations, events, numbers — use org or topic when a full personal name is too long
 - Never write meta or analyst-style labels (vs, narrative, outlook, tension) when the transcript has actual facts to use
 - Write general coverage lower-thirds, not guest-interview labels, unless the transcript is clearly about a specific person
 - Lead with the story; add detail only when it fits the character limit
