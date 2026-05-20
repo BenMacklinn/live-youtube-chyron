@@ -65,6 +65,7 @@ export default function Home() {
           entities: msg.entities,
           chyronOptions: msg.chyronOptions,
           verbatimCaption: msg.verbatimCaption,
+          recentSummary: msg.recentSummary,
         });
         setVerbatimCaption(msg.verbatimCaption);
         setNextChyronBatchAt(

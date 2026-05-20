@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LiveTranscript } from "@/components/LiveTranscript";
 import { ChyronSuggestions } from "@/components/ChyronSuggestions";
+import { RecentSummary } from "@/components/RecentSummary";
 import type { ChyronSuggestions as ChyronSuggestionsType } from "@/lib/api";
 
 type Props = {
@@ -42,9 +43,10 @@ export function TranscriptChyronColumns({
   }, [suggestions, isRunning, nextBatchAt]);
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-2">
+    <div className="grid items-start gap-6 xl:grid-cols-3 lg:grid-cols-2">
       <LiveTranscript segments={segments} partial={partial} maxHeight={chyronHeight ?? undefined} />
-      <div ref={chyronRef} className="h-fit">
+      <RecentSummary summary={suggestions?.recentSummary} isRunning={isRunning} />
+      <div ref={chyronRef} className="h-fit lg:col-span-2 xl:col-span-1">
         <ChyronSuggestions
           suggestions={suggestions}
           onApprove={onApprove}

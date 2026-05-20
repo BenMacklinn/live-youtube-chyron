@@ -13,6 +13,7 @@ export type ChyronSuggestions = {
   entities: string[];
   chyronOptions: ChyronOption[];
   verbatimCaption: string;
+  recentSummary?: string;
   chyronCadenceSec?: number;
   nextBatchAt?: number;
 };
@@ -50,6 +51,7 @@ export type LiveMessage =
       entities: string[];
       chyronOptions: ChyronOption[];
       verbatimCaption: string;
+      recentSummary?: string;
       chyronCadenceSec?: number;
       nextBatchAt?: number;
     }

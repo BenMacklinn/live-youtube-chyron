@@ -48,6 +48,7 @@ export type ChyronBatchRow = {
   topic: string;
   entities: string[];
   verbatim_caption: string;
+  recent_summary: string;
   chyron_cadence_sec: number;
   next_batch_at: string | null;
   created_at: string;

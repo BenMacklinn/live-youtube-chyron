@@ -8,6 +8,8 @@ export const liveConfig = {
   chyronModel: process.env.CHYRON_MODEL || "gpt-5.4-nano",
   chyronCadenceSec: numberFromEnv("CHYRON_CADENCE_SEC", 8),
   contextWindowSec: numberFromEnv("CONTEXT_WINDOW_SEC", 60),
+  recentSummaryWindowSec: numberFromEnv("RECENT_SUMMARY_WINDOW_SEC", 30),
+  recentSummaryMaxChars: numberFromEnv("RECENT_SUMMARY_MAX_CHARS", 420),
   contextSummaryMaxChars: numberFromEnv("CONTEXT_SUMMARY_MAX_CHARS", 1200),
   contextRecentTranscriptMaxChars: numberFromEnv("CONTEXT_RECENT_TRANSCRIPT_MAX_CHARS", 6000),
   contextEntitiesLimit: numberFromEnv("CONTEXT_ENTITIES_LIMIT", 20),

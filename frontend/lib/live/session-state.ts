@@ -63,6 +63,7 @@ export async function loadSessionSnapshot(supabase: SupabaseClient<Database>, se
         rationale: option.rationale,
       })),
       verbatimCaption: latestBatch.verbatim_caption,
+      recentSummary: latestBatch.recent_summary,
       chyronCadenceSec: latestBatch.chyron_cadence_sec,
       nextBatchAt: latestBatch.next_batch_at ? Date.parse(latestBatch.next_batch_at) / 1000 : undefined,
     };
