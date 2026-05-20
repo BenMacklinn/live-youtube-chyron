@@ -8,8 +8,10 @@ const CHYRON_TARGET_CHARS = 34;
 const CHYRON_HEADLINE_VOICE = `Headline voice (critical):
 - Write broad broadcast lower-thirds — the general topic, theme, or question-turned-statement for this segment
 - Zoom out from the last sentence: what is the conversation about at a high level, not the tactical step they just mentioned
+- One beat per line: state a single fact or theme — do not stack the announcement plus reaction, buzz, or editorial color
 - Never write commands, tips, or how-to lines (don't, use, be, try, get, stop, edit, avoid, make, start, keep, you, your)
 - Never headline a single tool, workflow step, or piece of advice unless that is the whole segment theme
+- Never add hype verbs or vague reaction framing (sparks, buzz, frenzy, shockwaves, ignites, fuels, roils, under fire) when a plain fact headline works
 - Prefer broad topic patterns: theme + context, industry + issue, org + big idea, question distilled to a statement headline`;
 
 const CHYRON_WRITING = `Writing chyrons (critical — do this before you output JSON):
@@ -39,7 +41,9 @@ Questions → statement chyrons (both modes):
 
 Granularity:
 - Default to general topic headlines for interviews, panels, and advice segments
-- Only go tighter (company, number, event) when the transcript is clearly hard news or a breaking development — and still keep the line broad enough to read as a segment title`;
+- When the transcript states hard news (funding, deal, earnings, launch, hire, policy): write plain factual headlines — org + what happened + one number if it fits
+- Vary options by picking different single facts (round size, valuation, investor, product) — not by rephrasing the same fact with hype or buzzwords
+- Keep hard-news lines simple and direct; save broader theme headlines for when there is no single clear announcement`;
 
 const JSON_SCHEMA = `Respond with JSON only:
 {
@@ -167,6 +171,12 @@ export function buildChyronPrompt(
   };
 }
 
+function looksLikeEditorialHypeChyron(text: string) {
+  return /\b(SPARKS?|IGNITES?|FUELS?|SENDS?|ROILS?)\b.*\b(BUZZ|FRENZY|FIRESTORM|SHOCKWAVES?|DEBATE)\b|\b(VALUATION|STOCK|DEAL)\s+(BUZZ|FRENZY|WATCH)\b/.test(
+    text,
+  );
+}
+
 function looksLikeImperativeChyron(text: string) {
   if (/\b(YOU|YOUR)\b/.test(text)) return true;
   return /^(DON'T|DONT|DO NOT|USE|BE |BE$|TRY|GET |GET$|STOP|EDIT|AVOID|MAKE|TAKE|START|KEEP|NEVER|ALWAYS|LEARN|BUILD|WRITE|SET |SET$|GO |GO$|STAY|RUN|FIX|SKIP|ADD|PUT|PLAN|THINK|FOCUS)\b/.test(
@@ -179,6 +189,7 @@ function isPublishableChyronOption(text: string, rationale: string, charCount?: 
   if (typeof charCount === "number" && charCount > CHYRON_MAX_CHARS) return false;
   if (/too long|over limit|exceeds.*limit|did not fit|removed draft/i.test(rationale)) return false;
   if (looksLikeImperativeChyron(text)) return false;
+  if (looksLikeEditorialHypeChyron(text)) return false;
   return true;
 }
 
