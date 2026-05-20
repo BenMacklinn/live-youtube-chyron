@@ -24,6 +24,8 @@ import {
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
+const AUTO_CLEAR_CONTEXT_MS = 60_000;
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -261,20 +263,57 @@ export default function Home() {
     }
   };
 
-  const handleClearContext = async () => {
-    if (!sessionId) return;
+  const applyContextClearedLocally = useCallback(() => {
     setSegments([]);
     setPartial("");
     setSuggestions(null);
     setVerbatimCaption("");
     setNextChyronBatchAt(null);
-    setContextNotice("Context cleared. The next chyron batch will start fresh.");
+  }, []);
+
+  const handleClearContext = useCallback(
+    async (source: "manual" | "auto" = "manual") => {
+      if (!sessionId) return;
+      applyContextClearedLocally();
+      setContextNotice(
+        source === "auto"
+          ? "Context auto-cleared (60s rolling window)."
+          : "Context cleared. The next chyron batch will start fresh.",
+      );
+      try {
+        await clearSessionContext(sessionId);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to clear context");
+      }
+    },
+    [sessionId, applyContextClearedLocally],
+  );
+
+  const handleClearNudge = async () => {
+    if (!sessionId) return;
+    if (!producerGuidance && !guidanceDraft.trim()) return;
+
+    setGuidanceSaving(true);
     try {
-      await clearSessionContext(sessionId);
+      await saveProducerGuidance(sessionId, "");
+      setProducerGuidance("");
+      setGuidanceDraft("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to clear context");
+      setError(e instanceof Error ? e.message : "Failed to clear nudge");
+    } finally {
+      setGuidanceSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!isRunning || !sessionId) return;
+
+    const intervalId = window.setInterval(() => {
+      void handleClearContext("auto");
+    }, AUTO_CLEAR_CONTEXT_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isRunning, sessionId, handleClearContext]);
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
@@ -299,12 +338,15 @@ export default function Home() {
             <ModeToggle mode={mode} onChange={handleModeChange} disabled={!sessionId} />
             <button
               type="button"
-              onClick={handleClearContext}
+              onClick={() => void handleClearContext("manual")}
               disabled={!isRunning}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               Clear Context
             </button>
+            {isRunning && (
+              <span className="text-xs text-zinc-500">Auto-clears every 60s</span>
+            )}
           </div>
           <p className="text-sm text-zinc-500">
             Status: <span className="font-medium capitalize text-zinc-800 dark:text-zinc-200">{status}</span>
@@ -331,9 +373,11 @@ export default function Home() {
           value={guidanceDraft}
           onChange={setGuidanceDraft}
           onSubmit={handleGuidanceSubmit}
+          onClearNudge={() => void handleClearNudge()}
           disabled={!sessionId}
           saving={guidanceSaving}
           hasUnsavedChanges={guidanceDraft.trim() !== producerGuidance}
+          hasNudge={Boolean(producerGuidance || guidanceDraft.trim())}
         />
 
         <TranscriptChyronColumns

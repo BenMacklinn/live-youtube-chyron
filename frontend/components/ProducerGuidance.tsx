@@ -4,18 +4,22 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  onClearNudge?: () => void;
   disabled?: boolean;
   saving?: boolean;
   hasUnsavedChanges?: boolean;
+  hasNudge?: boolean;
 };
 
 export function ProducerGuidance({
   value,
   onChange,
   onSubmit,
+  onClearNudge,
   disabled,
   saving,
   hasUnsavedChanges,
+  hasNudge,
 }: Props) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -53,14 +57,24 @@ export function ProducerGuidance({
             Press <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Enter</kbd> to
             apply ground truth. <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Shift+Enter</kbd> for a new line.
           </p>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={disabled || saving || !hasUnsavedChanges}
-            className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            Apply
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClearNudge}
+              disabled={disabled || saving || !hasNudge}
+              className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              Clear nudge
+            </button>
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={disabled || saving || !hasUnsavedChanges}
+              className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Apply
+            </button>
+          </div>
         </div>
       </div>
     </section>
