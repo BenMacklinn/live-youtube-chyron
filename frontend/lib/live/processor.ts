@@ -308,6 +308,33 @@ async function maybeGenerateChyrons(
   const optionRows = buildChyronOptionRows(parsed.chyronOptions, batchId, session.id, skipTexts);
   const nextSessionSummary = sessionSummary || session.session_summary;
 
+  if (optionRows.length === 0) {
+    const updated = await updateSession(supabase, session.id, {
+      session_summary: nextSessionSummary,
+      latest_verbatim: verbatimCaption,
+      last_generation_at: new Date().toISOString(),
+      chyron_input_tokens: Number(session.chyron_input_tokens ?? 0) + (response.usage?.prompt_tokens ?? 0),
+      chyron_output_tokens: Number(session.chyron_output_tokens ?? 0) + (response.usage?.completion_tokens ?? 0),
+      chyron_requests: Number(session.chyron_requests ?? 0) + 1,
+    });
+
+    await publishSessionEvent(supabase, session.id, "chyron.suggestions", {
+      type: "chyron.suggestions",
+      batchId: session.latest_batch_id ?? batchId,
+      sessionSummary: nextSessionSummary,
+      chyronOptions: [],
+      verbatimCaption,
+      recentSummary,
+      chyronCadenceSec: liveConfig.chyronCadenceSec,
+      nextBatchAt: Date.parse(nextBatchAt) / 1000,
+    });
+    await publishSessionEvent(supabase, session.id, "usage.update", {
+      type: "usage.update",
+      ...usagePayload(updated),
+    });
+    return;
+  }
+
   const { error: batchError } = await supabase.from("chyron_batches").insert({
     id: batchId,
     session_id: session.id,

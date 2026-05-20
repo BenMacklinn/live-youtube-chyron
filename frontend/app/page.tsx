@@ -75,15 +75,15 @@ export default function Home() {
         break;
       case "chyron.suggestions":
         setContextNotice("");
-        setSuggestions({
-          batchId: msg.batchId,
-          sessionSummary: msg.sessionSummary,
-          topic: msg.topic,
-          entities: msg.entities,
-          chyronOptions: msg.chyronOptions,
-          verbatimCaption: msg.verbatimCaption,
-          recentSummary: msg.recentSummary,
-        });
+        setSuggestions((prev) => ({
+          batchId: msg.chyronOptions.length > 0 ? msg.batchId : (prev?.batchId ?? msg.batchId),
+          sessionSummary: msg.sessionSummary || prev?.sessionSummary || "",
+          topic: msg.topic || prev?.topic || "",
+          entities: msg.entities.length > 0 ? msg.entities : (prev?.entities ?? []),
+          chyronOptions: msg.chyronOptions.length > 0 ? msg.chyronOptions : (prev?.chyronOptions ?? []),
+          verbatimCaption: msg.verbatimCaption || prev?.verbatimCaption || "",
+          recentSummary: msg.recentSummary || prev?.recentSummary || "",
+        }));
         setVerbatimCaption(msg.verbatimCaption);
         setNextChyronBatchAt(
           msg.nextBatchAt ?? Date.now() / 1000 + (msg.chyronCadenceSec ?? 8),

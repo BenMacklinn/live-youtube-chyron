@@ -179,7 +179,8 @@ function looksLikeEditorialHypeChyron(text: string) {
 
 function looksLikeImperativeChyron(text: string) {
   if (/\b(YOU|YOUR)\b/.test(text)) return true;
-  return /^(DON'T|DONT|DO NOT|USE|BE |BE$|TRY|GET |GET$|STOP|EDIT|AVOID|MAKE|TAKE|START|KEEP|NEVER|ALWAYS|LEARN|BUILD|WRITE|SET |SET$|GO |GO$|STAY|RUN|FIX|SKIP|ADD|PUT|PLAN|THINK|FOCUS)\b/.test(
+  // Block clear commands at line start — not descriptive headlines (NEVER ENOUGH FUNDING, KEEPING OSS SECURE are OK).
+  return /^(DON'T|DONT|DO NOT|USE |USE$|TRY |TRY$|GET |GET$|STOP |STOP$|EDIT |EDIT$|AVOID |AVOID$|MAKE |MAKE$|TAKE |TAKE$|START |START$|LEARN |LEARN$|WRITE |WRITE$|GO |GO$|SKIP |SKIP$|BE |BE$)\b/.test(
     text,
   );
 }

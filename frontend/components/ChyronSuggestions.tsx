@@ -115,7 +115,12 @@ export function ChyronSuggestions({
         )}
       </header>
       <div className="space-y-3 p-4">
-        {suggestions.chyronOptions.map((opt) => (
+        {suggestions.chyronOptions.length === 0 ? (
+          <p className="text-sm text-zinc-400">
+            No chyrons in this batch — summary updated, retrying on the next cadence…
+          </p>
+        ) : (
+          suggestions.chyronOptions.map((opt) => (
           <div key={opt.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
             {editingId === opt.id ? (
               <div className="space-y-2">
@@ -175,7 +180,8 @@ export function ChyronSuggestions({
               </>
             )}
           </div>
-        ))}
+        ))
+        )}
       </div>
       <ChyronCountdown isRunning={isRunning} hasSuggestions secondsUntilNext={secondsUntilNext} />
     </section>
