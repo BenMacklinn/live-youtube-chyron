@@ -16,16 +16,38 @@ import { audioBytesForSeconds, usagePayload } from "./usage";
 const CHYRON_MAX_CHARS = 39;
 const CHYRON_TARGET_CHARS = 36;
 
-const CHYRON_STYLE_RULES = `Chyron title style (critical):
-- When guest name and company/show are provided below, every chyron MUST include the guest name and reference the company/show (use "[Name] on [topic]" or "[Company]: [name on topic]" — fit within the character limit).
-- Specific, not broad: one tight news beat from the current transcript topic — never a sector headline with no who/what.
-- Structure: "[Guest name] on [topic]", "[Company] [verb] [development]", or "[Name] on [what they are discussing]" using the supplied guest fields.
+const CHYRON_BASE_RULES = `Chyron title style (critical):
+- Specific, not broad: one tight news beat — never a sector headline with no concrete subject.
 - Every chyron must read as a finished phrase within the character limit. Never end on dangling words (to, on, about, into, for, with) or cut off mid-thought.
-- Ban vague abstractions without the guest anchor: no lines built only from jargon like quantities, shipping, disruption, debate, strategy, industry, market.
+- Ban vague abstractions: no lines built only from jargon like quantities, shipping, disruption, debate, strategy, industry, market.
 - Ban mood or meta labels (pressured, speaks out, heated exchange, turns to, pivot to) — state the actual topic instead.
-- If the transcript topic is unclear, still anchor to the guest name and company with the best-supported topic; return fewer options rather than going generic.`;
+- If the transcript topic is unclear, return fewer options rather than inventing facts.`;
 
-const CHYRON_QUALITY_USER_NOTE = `Chyron bar: When guest context is provided, every option must include the guest name and tie to the company/show. Pull the topic from the recent transcript. Each chyron text: complete thought, max ${CHYRON_MAX_CHARS} characters (count before output) — never write longer lines that will be truncated.`;
+const GUEST_CHYRON_RULES = `${CHYRON_BASE_RULES}
+- A guest is on air (name and company/show are set below). Every chyron MUST include the guest name and tie to the company/show — e.g. "[Name] on [topic]" or "[Company]: [name on topic]".`;
+
+const TOPIC_CHYRON_RULES = `${CHYRON_BASE_RULES}
+- No guest is on air (producer did not set both guest name and company). Assume host-only or general coverage — topic-driven headlines from the transcript only.
+- Do NOT use interview-guest framing: no "[Name] on [topic]", "GUEST ON", or "[Company] on [topic]" unless that exact person or company is actively discussed in the transcript.
+- Structure: "[Company] [verb] [development]", "[Topic]: [detail]", or "[Issue] [concrete beat]" using proper nouns from the transcript — not the show's guest fields.`;
+
+function chyronStyleRulesForSession(session: LiveSessionRow) {
+  return guestContextReady(session) ? GUEST_CHYRON_RULES : TOPIC_CHYRON_RULES;
+}
+
+function chyronQualityNoteForSession(session: LiveSessionRow) {
+  if (guestContextReady(session)) {
+    return `Chyron bar: Guest is on — every option must include the guest name and company/show. Pull the topic from the recent transcript. Max ${CHYRON_MAX_CHARS} characters (count before output).`;
+  }
+  return `Chyron bar: No guest on — topic-driven headlines only (no "name on topic" or "company on" unless spoken in the transcript). Max ${CHYRON_MAX_CHARS} characters (count before output).`;
+}
+
+function noGuestOnAirBlock(session: LiveSessionRow) {
+  if (guestContextReady(session)) return "";
+  return `
+
+On-air status: No guest segment — producer has not set both guest name and company. Do not invent a guest or use guest-interview lower-third patterns.`;
+}
 
 const PERSISTENT_SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
 
@@ -42,12 +64,11 @@ Your job each cycle:
 4. Every chyron text MUST be ${CHYRON_MAX_CHARS} characters or fewer (count every letter, space, and punctuation before you respond). Aim for ${CHYRON_TARGET_CHARS} or less — shorter complete beats beat long lines that get cut off.
 5. Chyrons should reflect the FULL refined session context, weighted toward the current news beat in the recent window.
 6. Do not repeat recently approved or rejected chyrons.
-
-${CHYRON_STYLE_RULES}
-7. If context is ambiguous, return fewer options rather than inventing facts.
-8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
-9. Keep the session summary compact. It should be a memory aid, not a transcript.
-10. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
+7. Follow the chyron style rules in the user message (guest vs no-guest mode).
+8. If context is ambiguous, return fewer options rather than inventing facts.
+9. Provide a cleaned verbatim caption for the recent window (subtitle mode).
+10. Keep the session summary compact. It should be a memory aid, not a transcript.
+11. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
 
 Respond with valid JSON only:
 {
@@ -64,7 +85,7 @@ const FRESH_CONTEXT_SYSTEM_PROMPT = `You are a broadcast producer assistant gene
 The producer just cleared session context. Treat this as a brand-new segment:
 - Ignore any prior topics, names, or story beats outside the recent transcript window below.
 - Build sessionSummary only from the recent transcript window.
-- Do not carry over people, places, or topics unless they appear in that window or in guest context.
+- Do not carry over people, places, or topics unless they appear in that window (or in guest context when a guest is on air).
 
 Your job each cycle:
 1. Write a compact session summary from the recent transcript only.
@@ -73,11 +94,10 @@ Your job each cycle:
 4. Every chyron text MUST be ${CHYRON_MAX_CHARS} characters or fewer (count before responding). Aim for ${CHYRON_TARGET_CHARS} or less.
 5. Chyrons should reflect the current news beat in the recent window.
 6. Do not repeat recently approved or rejected chyrons.
-
-${CHYRON_STYLE_RULES}
-7. If context is ambiguous, return fewer options rather than inventing facts.
-8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
-9. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
+7. Follow the chyron style rules in the user message (guest vs no-guest mode).
+8. If context is ambiguous, return fewer options rather than inventing facts.
+9. Provide a cleaned verbatim caption for the recent window (subtitle mode).
+10. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
 
 Respond with valid JSON only:
 {
@@ -129,7 +149,7 @@ function chyronIncludesGuest(text: string, session: LiveSessionRow) {
 
 function buildChyronPrompt(session: LiveSessionRow, recentTranscript: string, approved: string[], rejected: string[]) {
   const fresh = contextWasCleared(session) && !session.session_summary.trim();
-  const guidance = guestContextBlock(session);
+  const styleBlock = `${chyronStyleRulesForSession(session)}\n\n${chyronQualityNoteForSession(session)}${noGuestOnAirBlock(session)}${guestContextBlock(session)}`;
 
   if (fresh) {
     return {
@@ -142,7 +162,8 @@ Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
 Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
 
 Mode preference: ${session.mode}
-${CHYRON_QUALITY_USER_NOTE}${guidance}`,
+
+${styleBlock}`,
     };
   }
 
@@ -161,7 +182,8 @@ Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
 Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
 
 Mode preference: ${session.mode}
-${CHYRON_QUALITY_USER_NOTE}${guidance}`,
+
+${styleBlock}`,
   };
 }
 
@@ -239,8 +261,9 @@ function isUsableChyron(text: string, session: LiveSessionRow, anchors: string[]
   const nonGeneric = words.filter((word) => !CHYRON_GENERIC_WORDS.has(word));
   if (nonGeneric.length === 0) return false;
 
-  if (session.guest_name?.trim() || session.guest_company?.trim()) {
+  if (guestContextReady(session)) {
     if (!chyronIncludesGuest(text, session)) return false;
+    return true;
   }
 
   return chyronHasAnchor(text, anchors);

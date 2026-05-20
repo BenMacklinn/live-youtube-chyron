@@ -40,7 +40,7 @@ export function ProducerGuidance({
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Guest Context</h2>
             <p className="mt-1 text-xs text-zinc-500">
-              Set name and company, then Apply — chyrons anchor to the guest once saved
+              Optional — leave blank for topic-only headlines; fill both + Apply for guest segments
             </p>
           </div>
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
