@@ -1,4 +1,5 @@
 export type SessionMode = "chyron" | "verbatim";
+export type ChyronGenerationMode = "guest" | "timeline";
 
 export type ChyronOption = {
   id: string;
@@ -59,6 +60,7 @@ export type LiveMessage =
   | { type: "chyron.log"; text: string; timestamp: number }
   | { type: "chyron.rejected"; id: string }
   | { type: "mode.changed"; mode: SessionMode }
+  | { type: "generation_mode.changed"; generationMode: ChyronGenerationMode; timestamp: number }
   | { type: "context.cleared"; timestamp: number }
   | { type: "guidance.updated"; guestName: string; guestCompany: string; timestamp: number };
 
@@ -66,6 +68,7 @@ export type SessionSnapshot = {
   sessionId: string;
   status: string;
   mode: SessionMode;
+  generationMode: ChyronGenerationMode;
   startSec: number;
   youtubeUrl: string;
   activeChyron: string;
@@ -98,11 +101,12 @@ export async function createSession(
   mode: SessionMode,
   contextWindowSec?: number,
   startSec?: number,
+  generationMode: ChyronGenerationMode = "timeline",
 ) {
   const res = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ youtubeUrl, mode, contextWindowSec, startSec: startSec ?? 0 }),
+    body: JSON.stringify({ youtubeUrl, mode, contextWindowSec, startSec: startSec ?? 0, generationMode }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -132,6 +136,10 @@ export async function rejectChyron(sessionId: string, id: string, text: string) 
 
 export async function setSessionMode(sessionId: string, mode: SessionMode) {
   await postSessionAction(sessionId, "mode", { mode });
+}
+
+export async function setChyronGenerationMode(sessionId: string, generationMode: ChyronGenerationMode) {
+  await postSessionAction(sessionId, "generation-mode", { generationMode });
 }
 
 export async function clearSessionContext(sessionId: string) {

@@ -1,4 +1,5 @@
 export type SessionMode = "chyron" | "verbatim";
+export type ChyronGenerationMode = "guest" | "timeline";
 export type SessionStatus = "connecting" | "transcribing" | "error" | "ended";
 export type ChyronAction = "approved" | "rejected";
 
@@ -8,6 +9,7 @@ export type LiveSessionRow = {
   id: string;
   youtube_url: string;
   mode: SessionMode;
+  generation_mode: ChyronGenerationMode;
   status: SessionStatus;
   start_sec: number;
   next_offset_sec: number;

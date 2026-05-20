@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const youtubeUrl = String(body.youtubeUrl ?? "").trim();
   const mode = body.mode === "verbatim" ? "verbatim" : "chyron";
+  const generationMode = body.generationMode === "guest" ? "guest" : "timeline";
   const startSec = Math.max(0, Number(body.startSec ?? 0) || 0);
   const contextWindowSec = clamp(Number(body.contextWindowSec ?? liveConfig.contextWindowSec) || liveConfig.contextWindowSec, 30, 90);
 
@@ -31,6 +32,7 @@ export async function POST(request: NextRequest) {
     .insert({
       youtube_url: streamUrl,
       mode,
+      generation_mode: generationMode,
       status: "connecting",
       start_sec: startSec,
       next_offset_sec: startSec,

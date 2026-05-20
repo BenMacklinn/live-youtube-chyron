@@ -73,6 +73,7 @@ export async function loadSessionSnapshot(supabase: SupabaseClient<Database>, se
     sessionId: session.id,
     status: session.status,
     mode: session.mode,
+    generationMode: session.generation_mode ?? "timeline",
     startSec: session.start_sec,
     youtubeUrl: session.youtube_url,
     activeChyron: session.active_chyron,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
+import { GenerationModeToggle } from "@/components/GenerationModeToggle";
 import { ModeToggle } from "@/components/ModeToggle";
 import { UsagePanel } from "@/components/UsagePanel";
 import { ProducerGuidance, type GuestContextDraft } from "@/components/ProducerGuidance";
@@ -14,9 +15,11 @@ import {
   getSessionSnapshot,
   rejectChyron,
   setGuestContext,
+  setChyronGenerationMode,
   setSessionMode,
   stopSession,
   type ApprovedLogEntry,
+  type ChyronGenerationMode,
   type ChyronSuggestions as ChyronSuggestionsType,
   type LiveMessage,
   type SessionMode,
@@ -36,6 +39,7 @@ export default function Home() {
   const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<SessionMode>("chyron");
+  const [generationMode, setGenerationMode] = useState<ChyronGenerationMode>("timeline");
   const [segments, setSegments] = useState<string[]>([]);
   const [partial, setPartial] = useState("");
   const [suggestions, setSuggestions] = useState<ChyronSuggestionsType | null>(null);
@@ -92,6 +96,9 @@ export default function Home() {
       case "mode.changed":
         setMode(msg.mode);
         break;
+      case "generation_mode.changed":
+        setGenerationMode(msg.generationMode);
+        break;
       case "usage.update":
         setUsage({
           audioSeconds: msg.audioSeconds,
@@ -136,6 +143,7 @@ export default function Home() {
         if (cancelled) return;
         setStatus(snapshot.status);
         setMode(snapshot.mode);
+        setGenerationMode(snapshot.generationMode);
         setUrl(snapshot.youtubeUrl);
         setSegments(snapshot.segments);
         setPartial("");
@@ -200,7 +208,7 @@ export default function Home() {
     setGuestDraft(emptyGuestContext());
 
     try {
-      const { sessionId: id } = await createSession("", mode, undefined, 0);
+      const { sessionId: id } = await createSession("", mode, undefined, 0, generationMode);
       setSessionId(id);
       setStatus("connecting");
     } catch (e) {
@@ -228,6 +236,16 @@ export default function Home() {
       await setSessionMode(sessionId, next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to set mode");
+    }
+  };
+
+  const handleGenerationModeChange = async (next: ChyronGenerationMode) => {
+    setGenerationMode(next);
+    if (!sessionId) return;
+    try {
+      await setChyronGenerationMode(sessionId, next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to set generation mode");
     }
   };
 
@@ -325,6 +343,11 @@ export default function Home() {
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
+            <GenerationModeToggle
+              mode={generationMode}
+              onChange={handleGenerationModeChange}
+              disabled={starting}
+            />
             <ModeToggle mode={mode} onChange={handleModeChange} disabled={!sessionId} />
             <button
               type="button"

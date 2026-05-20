@@ -31,22 +31,34 @@ const TOPIC_CHYRON_RULES = `${CHYRON_BASE_RULES}
 - Do NOT use interview-guest framing: no "[Name] on [topic]", "GUEST ON", or "[Company] on [topic]" unless that exact person or company is actively discussed in the transcript.
 - Structure: "[Company] [verb] [development]", "[Topic]: [detail]", or "[Issue] [concrete beat]" using proper nouns from the transcript — not the show's guest fields.`;
 
+function isGuestGenerationMode(session: LiveSessionRow) {
+  return session.generation_mode === "guest";
+}
+
 function chyronStyleRulesForSession(session: LiveSessionRow) {
-  return guestContextReady(session) ? GUEST_CHYRON_RULES : TOPIC_CHYRON_RULES;
+  return isGuestGenerationMode(session) ? GUEST_CHYRON_RULES : TOPIC_CHYRON_RULES;
 }
 
 function chyronQualityNoteForSession(session: LiveSessionRow) {
-  if (guestContextReady(session)) {
-    return `Chyron bar: Guest is on — every option must include the guest name and company/show. Pull the topic from the recent transcript. Max ${CHYRON_MAX_CHARS} characters (count before output).`;
+  if (isGuestGenerationMode(session)) {
+    return `Chyron bar (Guest mode): Every option must include the guest name and company/show from guest context. Pull the topic from the recent transcript. Max ${CHYRON_MAX_CHARS} characters (count before output).`;
   }
-  return `Chyron bar: No guest on — topic-driven headlines only (no "name on topic" or "company on" unless spoken in the transcript). Max ${CHYRON_MAX_CHARS} characters (count before output).`;
+  return `Chyron bar (Timeline mode): Topic-driven headlines from the transcript only — no guest-interview framing. Max ${CHYRON_MAX_CHARS} characters (count before output).`;
 }
 
-function noGuestOnAirBlock(session: LiveSessionRow) {
-  if (guestContextReady(session)) return "";
+function generationModeBlock(session: LiveSessionRow) {
+  if (isGuestGenerationMode(session)) {
+    if (!guestContextReady(session)) {
+      return `
+
+Generation mode: Guest — producer must set guest name and company before chyrons can anchor to a guest.`;
+    }
+    return guestContextBlock(session);
+  }
+
   return `
 
-On-air status: No guest segment — producer has not set both guest name and company. Do not invent a guest or use guest-interview lower-third patterns.`;
+Generation mode: Timeline — no guest segment. Topic-driven headlines from the transcript only; do not use "[Name] on [topic]" unless that person is actively discussed in the audio.`;
 }
 
 const PERSISTENT_SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
@@ -64,7 +76,7 @@ Your job each cycle:
 4. Every chyron text MUST be ${CHYRON_MAX_CHARS} characters or fewer (count every letter, space, and punctuation before you respond). Aim for ${CHYRON_TARGET_CHARS} or less — shorter complete beats beat long lines that get cut off.
 5. Chyrons should reflect the FULL refined session context, weighted toward the current news beat in the recent window.
 6. Do not repeat recently approved or rejected chyrons.
-7. Follow the chyron style rules in the user message (guest vs no-guest mode).
+7. Follow the chyron style rules in the user message (Timeline vs Guest generation mode).
 8. If context is ambiguous, return fewer options rather than inventing facts.
 9. Provide a cleaned verbatim caption for the recent window (subtitle mode).
 10. Keep the session summary compact. It should be a memory aid, not a transcript.
@@ -94,7 +106,7 @@ Your job each cycle:
 4. Every chyron text MUST be ${CHYRON_MAX_CHARS} characters or fewer (count before responding). Aim for ${CHYRON_TARGET_CHARS} or less.
 5. Chyrons should reflect the current news beat in the recent window.
 6. Do not repeat recently approved or rejected chyrons.
-7. Follow the chyron style rules in the user message (guest vs no-guest mode).
+7. Follow the chyron style rules in the user message (Timeline vs Guest generation mode).
 8. If context is ambiguous, return fewer options rather than inventing facts.
 9. Provide a cleaned verbatim caption for the recent window (subtitle mode).
 10. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
@@ -149,7 +161,7 @@ function chyronIncludesGuest(text: string, session: LiveSessionRow) {
 
 function buildChyronPrompt(session: LiveSessionRow, recentTranscript: string, approved: string[], rejected: string[]) {
   const fresh = contextWasCleared(session) && !session.session_summary.trim();
-  const styleBlock = `${chyronStyleRulesForSession(session)}\n\n${chyronQualityNoteForSession(session)}${noGuestOnAirBlock(session)}${guestContextBlock(session)}`;
+  const styleBlock = `${chyronStyleRulesForSession(session)}\n\n${chyronQualityNoteForSession(session)}${generationModeBlock(session)}`;
 
   if (fresh) {
     return {
@@ -261,9 +273,8 @@ function isUsableChyron(text: string, session: LiveSessionRow, anchors: string[]
   const nonGeneric = words.filter((word) => !CHYRON_GENERIC_WORDS.has(word));
   if (nonGeneric.length === 0) return false;
 
-  if (guestContextReady(session)) {
-    if (!chyronIncludesGuest(text, session)) return false;
-    return true;
+  if (isGuestGenerationMode(session)) {
+    return chyronIncludesGuest(text, session);
   }
 
   return chyronHasAnchor(text, anchors);
@@ -596,6 +607,7 @@ async function maybeGenerateChyrons(
 
   const recentTranscript = tailChars((segments ?? []).map((segment) => segment.text).join(" "), liveConfig.contextRecentTranscriptMaxChars);
   if (!recentTranscript.trim()) return;
+  if (isGuestGenerationMode(session) && !guestContextReady(session)) return;
 
   const approved = (memory ?? []).filter((entry) => entry.action === "approved").map((entry) => entry.text).slice(0, 8);
   const rejected = (memory ?? []).filter((entry) => entry.action === "rejected").map((entry) => entry.text).slice(0, 5);
