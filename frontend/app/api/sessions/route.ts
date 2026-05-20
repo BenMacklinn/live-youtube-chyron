@@ -3,6 +3,7 @@ import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { liveConfig } from "@/lib/live/config";
 import { publishSessionEvent } from "@/lib/live/events";
 import { kickOffProcessing } from "@/lib/live/kickoff";
+import { resolveSessionStreamInputUrl } from "@/lib/live/stream-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -17,15 +18,18 @@ export async function POST(request: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ detail: "OPENAI_API_KEY is not configured" }, { status: 500 });
   }
-  if (!youtubeUrl.includes("youtube.com") && !youtubeUrl.includes("youtu.be")) {
-    return NextResponse.json({ detail: "Invalid YouTube URL" }, { status: 400 });
+  let streamUrl: string;
+  try {
+    streamUrl = await resolveSessionStreamInputUrl(youtubeUrl);
+  } catch (error) {
+    return NextResponse.json({ detail: error instanceof Error ? error.message : "Invalid stream URL" }, { status: 400 });
   }
 
   const supabase = createServiceSupabaseClient();
   const { data: session, error } = await supabase
     .from("live_sessions")
     .insert({
-      youtube_url: youtubeUrl,
+      youtube_url: streamUrl,
       mode,
       status: "connecting",
       start_sec: startSec,

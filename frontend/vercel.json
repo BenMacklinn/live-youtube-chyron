@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "app/api/sessions/[sessionId]/process/route.ts": {
+      "maxDuration": 300,
+      "includeFiles": "node_modules/ffmpeg-static/**"
+    }
+  }
+}

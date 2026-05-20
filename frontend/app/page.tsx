@@ -6,13 +6,11 @@ import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { ModeToggle } from "@/components/ModeToggle";
 import { UsagePanel } from "@/components/UsagePanel";
 import { YouTubeInput } from "@/components/YouTubeInput";
-import { YouTubePlayer } from "@/components/YouTubePlayer";
 import {
   approveChyron,
   clearSessionContext,
   createSession,
   getSessionSnapshot,
-  parseStartTime,
   rejectChyron,
   setSessionMode,
   stopSession,
@@ -26,7 +24,6 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [startAt, setStartAt] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +36,6 @@ export default function Home() {
   const [approvedLog, setApprovedLog] = useState<ApprovedLogEntry[]>([]);
   const [usage, setUsage] = useState<UsageStats | null>(null);
   const [starting, setStarting] = useState(false);
-  const [playerStartSec, setPlayerStartSec] = useState(0);
   const [contextNotice, setContextNotice] = useState("");
   const [nextChyronBatchAt, setNextChyronBatchAt] = useState<number | null>(null);
   const [liveConnection, setLiveConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
@@ -125,7 +121,6 @@ export default function Home() {
         setStatus(snapshot.status);
         setMode(snapshot.mode);
         setUrl(snapshot.youtubeUrl);
-        setPlayerStartSec(snapshot.startSec);
         setSegments(snapshot.segments);
         setPartial("");
         setSuggestions(snapshot.latestSuggestions);
@@ -185,9 +180,7 @@ export default function Home() {
     setNextChyronBatchAt(null);
 
     try {
-      const startSec = parseStartTime(startAt);
-      setPlayerStartSec(startSec);
-      const { sessionId: id } = await createSession(url, mode, undefined, startSec);
+      const { sessionId: id } = await createSession("", mode, undefined, 0);
       setSessionId(id);
       setStatus("connecting");
     } catch (e) {
@@ -239,6 +232,12 @@ export default function Home() {
 
   const handleClearContext = async () => {
     if (!sessionId) return;
+    setSegments([]);
+    setPartial("");
+    setSuggestions(null);
+    setVerbatimCaption("");
+    setNextChyronBatchAt(null);
+    setContextNotice("Context cleared. The next chyron batch will start fresh.");
     try {
       await clearSessionContext(sessionId);
     } catch (e) {
@@ -250,17 +249,14 @@ export default function Home() {
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8">
         <header>
-          <h1 className="text-2xl font-bold tracking-tight">Live YouTube Chyron Pipeline</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Live Stream Chyron Pipeline</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Paste a YouTube URL to transcribe live and generate broadcast chyron suggestions every 8 seconds.
+            Start the current daily Newsmax HLS stream and generate broadcast chyron suggestions every 8 seconds.
           </p>
         </header>
 
         <YouTubeInput
-          url={url}
-          startAt={startAt}
-          onUrlChange={setUrl}
-          onStartAtChange={setStartAt}
+          sourceUrl={url}
           onStart={handleStart}
           onStop={handleStop}
           isRunning={isRunning}
@@ -299,8 +295,6 @@ export default function Home() {
         )}
 
         <UsagePanel usage={usage} />
-
-        <YouTubePlayer url={url} startSec={playerStartSec} active={isRunning || status === "ended"} />
 
         <TranscriptChyronColumns
           segments={segments}

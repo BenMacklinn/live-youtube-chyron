@@ -2,17 +2,20 @@ import "server-only";
 
 import { spawn } from "node:child_process";
 import OpenAI, { toFile } from "openai";
-import ffmpegPath from "ffmpeg-static";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, LiveSessionRow } from "@/lib/supabase/types";
 import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { liveConfig } from "./config";
 import { publishSessionEvent } from "./events";
+import { getFfmpegBinaryPath } from "./ffmpeg-binary";
+import { loadHlsPlaylist, type HlsSegment } from "./hls-playlist";
+import { resolveStreamInputUrl, streamSourceKind, type StreamSourceKind } from "./stream-source";
 import { dedupeOverlap, headChars, tailChars } from "./text";
 import { audioBytesForSeconds, usagePayload } from "./usage";
-import { resolveYouTubeAudioUrl } from "./youtube-audio";
 
-const SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
+const CHYRON_MAX_CHARS = 39;
+
+const PERSISTENT_SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
 
 You receive:
 1. A persistent session summary (conversation so far - refine it, do not discard prior context)
@@ -22,12 +25,13 @@ You receive:
 Your job each cycle:
 1. REFINE the session summary - merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
 2. Identify the current main topic or key moment.
-3. Generate 3-5 short broadcast-style chyron options in ALL CAPS (<= 60 chars each).
-4. Chyrons should reflect the FULL refined session context, weighted toward what is happening NOW in the recent window.
-5. Do not repeat recently approved or rejected chyrons.
-6. If context is ambiguous, return fewer options rather than inventing facts.
-7. Provide a cleaned verbatim caption for the recent window (subtitle mode).
-8. Keep the session summary compact. It should be a memory aid, not a transcript.
+3. Generate 3-5 short broadcast-style chyron options in ALL CAPS.
+4. Every chyron option MUST be fewer than ${CHYRON_MAX_CHARS} characters, including spaces and punctuation.
+5. Chyrons should reflect the FULL refined session context, weighted toward what is happening NOW in the recent window.
+6. Do not repeat recently approved or rejected chyrons.
+7. If context is ambiguous, return fewer options rather than inventing facts.
+8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
+9. Keep the session summary compact. It should be a memory aid, not a transcript.
 
 Respond with valid JSON only:
 {
@@ -38,8 +42,84 @@ Respond with valid JSON only:
   "verbatimCaption": "string"
 }`;
 
+const FRESH_CONTEXT_SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
+
+The producer just cleared session context. Treat this as a brand-new segment:
+- Ignore any prior topics, names, or story beats outside the recent transcript window below.
+- Build sessionSummary only from the recent transcript window.
+- Do not carry over people, places, or topics unless they appear in that window.
+
+Your job each cycle:
+1. Write a compact session summary from the recent transcript only.
+2. Identify the current main topic or key moment.
+3. Generate 3-5 short broadcast-style chyron options in ALL CAPS.
+4. Every chyron option MUST be fewer than ${CHYRON_MAX_CHARS} characters, including spaces and punctuation.
+5. Chyrons should reflect what is happening NOW in the recent window.
+6. Do not repeat recently approved or rejected chyrons.
+7. If context is ambiguous, return fewer options rather than inventing facts.
+8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
+
+Respond with valid JSON only:
+{
+  "sessionSummary": "2-5 sentences from the recent transcript only",
+  "topic": "current main topic",
+  "entities": ["names, orgs, key terms"],
+  "chyronOptions": [{"text": "string", "rationale": "string"}],
+  "verbatimCaption": "string"
+}`;
+
+function contextWasCleared(session: LiveSessionRow) {
+  return Boolean(session.context_cleared_at);
+}
+
+function buildChyronPrompt(session: LiveSessionRow, recentTranscript: string, approved: string[], rejected: string[]) {
+  const fresh = contextWasCleared(session) && !session.session_summary.trim();
+
+  if (fresh) {
+    return {
+      system: FRESH_CONTEXT_SYSTEM_PROMPT,
+      user: `Recent transcript (last ${session.context_window_sec}s — start fresh, no prior segment memory):
+${recentTranscript}
+
+Summary budget: keep the next sessionSummary under ${liveConfig.contextSummaryMaxChars} characters.
+Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
+Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
+
+Mode preference: ${session.mode}`,
+    };
+  }
+
+  return {
+    system: PERSISTENT_SYSTEM_PROMPT,
+    user: `Persistent session summary (refine this - do not wipe prior context):
+${session.session_summary || "None yet - start building from the recent transcript below."}
+
+Recent transcript (last ${session.context_window_sec}s):
+${recentTranscript}
+
+Summary budget: keep the next sessionSummary under ${liveConfig.contextSummaryMaxChars} characters.
+Topic history: ${JSON.stringify(session.topic_history)}
+Known entities: ${JSON.stringify(session.known_entities)}
+Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
+Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
+
+Mode preference: ${session.mode}`,
+  };
+}
+
 type ProcessResult = {
   shouldContinue: boolean;
+  nextDelayMs?: number;
+};
+
+const LIVE_CHAIN_DELAY_MS = Math.max(1000, liveConfig.transcriptionChunkSec * 1000);
+const HLS_POLL_DELAY_MS = Math.max(1000, liveConfig.hlsPollSec * 1000);
+const HLS_RUN_BUDGET_MS = Math.max(15_000, liveConfig.hlsRunBudgetSec * 1000);
+
+type ChunkResult = {
+  sourceKind: StreamSourceKind;
+  didWork: boolean;
+  finished?: boolean;
 };
 
 export async function processSessionRun(sessionId: string): Promise<ProcessResult> {
@@ -51,26 +131,28 @@ export async function processSessionRun(sessionId: string): Promise<ProcessResul
   }
 
   try {
+    const firstSession = await loadSessionForProcessing(supabase, sessionId);
+    if (!firstSession || firstSession.status === "ended" || firstSession.status === "error") {
+      return { shouldContinue: false };
+    }
+
+    if (streamSourceKind(resolveStreamInputUrl(firstSession.youtube_url)) === "hls") {
+      return processHlsSessionRun(supabase, openai, firstSession);
+    }
+
     for (let i = 0; i < liveConfig.chunksPerRun; i += 1) {
-      const session = await loadSessionForProcessing(supabase, sessionId);
+      const session = i === 0 ? firstSession : await loadSessionForProcessing(supabase, sessionId);
       if (!session || session.status === "ended" || session.status === "error") {
         return { shouldContinue: false };
       }
 
-      if (session.status === "connecting") {
-        const updated = await updateSession(supabase, session.id, { status: "transcribing", error: null });
-        await publishSessionEvent(supabase, session.id, "session.status", {
-          type: "session.status",
-          status: updated.status,
-          error: updated.error,
-        });
-      }
-
+      await ensureTranscribing(supabase, session);
       await processOneChunk(supabase, openai, session);
     }
 
     const latest = await loadSessionForProcessing(supabase, sessionId);
-    return { shouldContinue: latest?.status === "transcribing" || latest?.status === "connecting" };
+    const shouldContinue = latest?.status === "transcribing" || latest?.status === "connecting";
+    return { shouldContinue, nextDelayMs: shouldContinue ? LIVE_CHAIN_DELAY_MS : undefined };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown processing error";
     const updated = await updateSession(supabase, sessionId, { status: "error", error: message });
@@ -87,10 +169,15 @@ async function processOneChunk(
   supabase: SupabaseClient<Database>,
   openai: OpenAI,
   session: LiveSessionRow,
-) {
+): Promise<ChunkResult> {
+  const audioUrl = resolveStreamInputUrl(session.youtube_url);
+  const sourceKind = streamSourceKind(audioUrl);
+  if (sourceKind === "hls") {
+    return processHlsSegment(supabase, openai, session, audioUrl);
+  }
+
   const offsetSec = Number(session.next_offset_sec || session.start_sec || 0);
   const durationSec = liveConfig.transcriptionChunkSec + Math.max(0, liveConfig.transcriptionOverlapSec);
-  const audioUrl = await resolveYouTubeAudioUrl(session.youtube_url);
   const wav = await extractWavChunk(audioUrl, offsetSec, durationSec);
   const transcriptText = await transcribeChunk(openai, wav, session.id);
   const deduped = dedupeOverlap(session.last_transcript_text, transcriptText);
@@ -102,6 +189,106 @@ async function processOneChunk(
     last_transcript_text: transcriptText.trim(),
   };
 
+  await commitTranscriptChunk(supabase, openai, session, sessionPatch, deduped, offsetSec);
+  return { sourceKind, didWork: true };
+}
+
+async function processHlsSessionRun(
+  supabase: SupabaseClient<Database>,
+  openai: OpenAI,
+  firstSession: LiveSessionRow,
+): Promise<ProcessResult> {
+  const deadline = Date.now() + HLS_RUN_BUDGET_MS;
+  let session: LiveSessionRow | null = firstSession;
+
+  while (Date.now() < deadline) {
+    if (!session || session.status === "ended" || session.status === "error") {
+      return { shouldContinue: false };
+    }
+
+    await ensureTranscribing(supabase, session);
+    const result = await processHlsSegment(supabase, openai, session, resolveStreamInputUrl(session.youtube_url));
+
+    if (result.finished) {
+      const updated = await updateSession(supabase, session.id, { status: "ended" });
+      await publishSessionEvent(supabase, session.id, "session.status", {
+        type: "session.status",
+        status: updated.status,
+        error: updated.error,
+      });
+      return { shouldContinue: false };
+    }
+
+    if (!result.didWork) {
+      await delay(HLS_POLL_DELAY_MS);
+    }
+
+    session = await loadSessionForProcessing(supabase, firstSession.id);
+  }
+
+  const latest = await loadSessionForProcessing(supabase, firstSession.id);
+  const shouldContinue = latest?.status === "transcribing" || latest?.status === "connecting";
+  return { shouldContinue };
+}
+
+async function ensureTranscribing(supabase: SupabaseClient<Database>, session: LiveSessionRow) {
+  if (session.status !== "connecting") return;
+
+  const updated = await updateSession(supabase, session.id, { status: "transcribing", error: null });
+  await publishSessionEvent(supabase, session.id, "session.status", {
+    type: "session.status",
+    status: updated.status,
+    error: updated.error,
+  });
+}
+
+async function processHlsSegment(
+  supabase: SupabaseClient<Database>,
+  openai: OpenAI,
+  session: LiveSessionRow,
+  playlistUrl: string,
+): Promise<ChunkResult> {
+  const playlist = await loadHlsPlaylist(playlistUrl);
+  const segment = selectNextHlsSegment(playlist.segments, Number(session.next_offset_sec || 0), playlist.ended);
+
+  if (!segment) {
+    return { sourceKind: "hls", didWork: false, finished: playlist.ended };
+  }
+
+  const wav = await extractWavChunk(segment.url, 0, segment.durationSec);
+  const transcriptText = await transcribeChunk(openai, wav, session.id);
+  const deduped = dedupeOverlap(session.last_transcript_text, transcriptText);
+  const sessionPatch: Partial<LiveSessionRow> = {
+    next_offset_sec: segment.sequence + 1,
+    audio_bytes_sent: Number(session.audio_bytes_sent ?? 0) + audioBytesForSeconds(segment.durationSec),
+    last_transcript_text: transcriptText.trim(),
+  };
+
+  await commitTranscriptChunk(supabase, openai, session, sessionPatch, deduped, segment.sequence);
+  return { sourceKind: "hls", didWork: true };
+}
+
+function selectNextHlsSegment(segments: HlsSegment[], nextSequence: number, ended: boolean): HlsSegment | null {
+  if (segments.length === 0) return null;
+
+  if (nextSequence > 0) {
+    return segments.find((segment) => segment.sequence >= nextSequence) ?? null;
+  }
+
+  if (ended) return segments[0];
+
+  const startIndex = Math.max(0, segments.length - liveConfig.hlsLiveLagSegments - 1);
+  return segments[startIndex];
+}
+
+async function commitTranscriptChunk(
+  supabase: SupabaseClient<Database>,
+  openai: OpenAI,
+  session: LiveSessionRow,
+  sessionPatch: Partial<LiveSessionRow>,
+  deduped: string,
+  offsetSec: number,
+) {
   if (deduped) {
     const { error: insertError } = await supabase.from("transcript_segments").insert({
       session_id: session.id,
@@ -136,6 +323,10 @@ async function maybeGenerateChyrons(
   openai: OpenAI,
   session: LiveSessionRow,
 ) {
+  const freshSession = await loadSessionForProcessing(supabase, session.id);
+  if (!freshSession) return;
+  session = freshSession;
+
   if (session.context_version <= session.last_generation_version) return;
 
   if (session.last_generation_at) {
@@ -143,7 +334,18 @@ async function maybeGenerateChyrons(
     if (elapsedMs < liveConfig.chyronCadenceSec * 1000) return;
   }
 
+  const generationContextVersion = session.context_version;
   const cutoff = new Date(Date.now() - session.context_window_sec * 1000).toISOString();
+  let segmentQuery = supabase
+    .from("transcript_segments")
+    .select("text")
+    .eq("session_id", session.id)
+    .gte("created_at", cutoff)
+    .order("created_at", { ascending: true });
+  if (session.context_cleared_at) {
+    segmentQuery = segmentQuery.gte("created_at", session.context_cleared_at);
+  }
+
   let memoryQuery = supabase
     .from("chyron_memory")
     .select("text, action")
@@ -155,12 +357,7 @@ async function maybeGenerateChyrons(
   }
 
   const [{ data: segments, error: segmentError }, { data: memory, error: memoryError }] = await Promise.all([
-    supabase
-      .from("transcript_segments")
-      .select("text")
-      .eq("session_id", session.id)
-      .gte("created_at", cutoff)
-      .order("created_at", { ascending: true }),
+    segmentQuery,
     memoryQuery,
   ]);
 
@@ -172,39 +369,40 @@ async function maybeGenerateChyrons(
 
   const approved = (memory ?? []).filter((entry) => entry.action === "approved").map((entry) => entry.text).slice(0, 8);
   const rejected = (memory ?? []).filter((entry) => entry.action === "rejected").map((entry) => entry.text).slice(0, 5);
+  const prompt = buildChyronPrompt(session, recentTranscript, approved, rejected);
 
   const response = await openai.chat.completions.create({
     model: liveConfig.chyronModel,
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: `Persistent session summary (refine this - do not wipe prior context):
-${session.session_summary || "None yet - start building from the recent transcript below."}
-
-Recent transcript (last ${session.context_window_sec}s):
-${recentTranscript}
-
-Summary budget: keep the next sessionSummary under ${liveConfig.contextSummaryMaxChars} characters.
-Topic history: ${JSON.stringify(session.topic_history)}
-Known entities: ${JSON.stringify(session.known_entities)}
-Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
-Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
-
-Mode preference: ${session.mode}`,
-      },
+      { role: "system", content: prompt.system },
+      { role: "user", content: prompt.user },
     ],
     response_format: { type: "json_object" },
   });
 
+  const afterGeneration = await loadSessionForProcessing(supabase, session.id);
+  if (!afterGeneration || afterGeneration.context_version !== generationContextVersion) {
+    return;
+  }
+  session = afterGeneration;
+
   const parsed = JSON.parse(response.choices[0].message.content || "{}");
   const batchId = crypto.randomUUID();
-  const entities = mergeEntities(session.known_entities, parsed.entities ?? []);
+  const startFresh = contextWasCleared(session) && !session.session_summary.trim();
+  const entities = startFresh
+    ? mergeEntities([], parsed.entities ?? [])
+    : mergeEntities(session.known_entities, parsed.entities ?? []);
   const topic = String(parsed.topic ?? "").trim();
   const sessionSummary = parsed.sessionSummary
     ? headChars(String(parsed.sessionSummary).trim(), liveConfig.contextSummaryMaxChars)
     : session.session_summary;
-  const topicHistory = topic ? appendLimited(session.topic_history, topic, liveConfig.contextTopicHistoryLimit) : session.topic_history;
+  const topicHistory = startFresh
+    ? topic
+      ? [topic]
+      : []
+    : topic
+      ? appendLimited(session.topic_history, topic, liveConfig.contextTopicHistoryLimit)
+      : session.topic_history;
   const nextBatchAt = new Date(Date.now() + liveConfig.chyronCadenceSec * 1000).toISOString();
   const options: Array<{ text?: unknown; rationale?: unknown }> = Array.isArray(parsed.chyronOptions)
     ? parsed.chyronOptions.slice(0, 5)
@@ -227,7 +425,7 @@ Mode preference: ${session.mode}`,
     batch_id: batchId,
     session_id: session.id,
     option_index: index,
-    text: String(option.text ?? "").slice(0, 60).toUpperCase(),
+    text: headChars(String(option.text ?? "").toUpperCase(), CHYRON_MAX_CHARS),
     rationale: String(option.rationale ?? ""),
   }));
 
@@ -282,11 +480,12 @@ async function transcribeChunk(openai: OpenAI, wav: Buffer, sessionId: string) {
   return String(transcript.text ?? "").trim();
 }
 
-function extractWavChunk(audioUrl: string, offsetSec: number, durationSec: number): Promise<Buffer> {
-  if (!ffmpegPath) {
-    return Promise.reject(new Error("ffmpeg-static did not provide a binary path"));
-  }
-  const binaryPath = ffmpegPath;
+async function extractWavChunk(
+  audioUrl: string,
+  offsetSec: number,
+  durationSec: number,
+): Promise<Buffer> {
+  const binaryPath = await getFfmpegBinaryPath();
 
   return new Promise((resolve, reject) => {
     const args = [
@@ -295,10 +494,10 @@ function extractWavChunk(audioUrl: string, offsetSec: number, durationSec: numbe
       "error",
       "-ss",
       String(Math.max(0, offsetSec)),
-      "-t",
-      String(durationSec),
       "-i",
       audioUrl,
+      "-t",
+      String(durationSec),
       "-vn",
       "-ac",
       "1",
@@ -323,6 +522,10 @@ function extractWavChunk(audioUrl: string, offsetSec: number, durationSec: numbe
       reject(new Error(Buffer.concat(stderr).toString("utf8") || `ffmpeg exited with code ${code}`));
     });
   });
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function loadSessionForProcessing(supabase: SupabaseClient<Database>, sessionId: string) {

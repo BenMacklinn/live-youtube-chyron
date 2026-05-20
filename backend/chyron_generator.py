@@ -25,12 +25,13 @@ You receive:
 Your job each cycle:
 1. REFINE the session summary — merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
 2. Identify the current main topic or key moment.
-3. Generate 3-5 short broadcast-style chyron options in ALL CAPS (<= 60 chars each).
-4. Chyrons should reflect the FULL refined session context, weighted toward what is happening NOW in the recent window.
-5. Do not repeat recently approved or rejected chyrons.
-6. If context is ambiguous, return fewer options rather than inventing facts.
-7. Provide a cleaned verbatim caption for the recent window (subtitle mode).
-8. Keep the session summary compact. It should be a memory aid, not a transcript.
+3. Generate 3-5 short broadcast-style chyron options in ALL CAPS.
+4. Every chyron option MUST be fewer than 39 characters, including spaces and punctuation.
+5. Chyrons should reflect the FULL refined session context, weighted toward what is happening NOW in the recent window.
+6. Do not repeat recently approved or rejected chyrons.
+7. If context is ambiguous, return fewer options rather than inventing facts.
+8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
+9. Keep the session summary compact. It should be a memory aid, not a transcript.
 
 Respond with valid JSON only:
 {
@@ -174,7 +175,7 @@ Mode preference: {self.mode}
             options.append(
                 {
                     "id": f"{batch_id}-{i}",
-                    "text": str(opt.get("text", ""))[:60].upper(),
+                    "text": str(opt.get("text", "")).upper()[:39],
                     "rationale": opt.get("rationale", ""),
                 }
             )

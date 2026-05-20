@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     )
 
     openai_api_key: str = ""
-    chyron_model: str = "gpt-5.4-mini"
+    chyron_model: str = "gpt-5.4-nano"
     chyron_cadence_sec: int = 8
     context_window_sec: int = 60
     transcription_model: str = "gpt-4o-mini-transcribe"

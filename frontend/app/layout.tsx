@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Live YouTube Chyron Pipeline",
-  description: "Live transcription and broadcast chyron suggestions from YouTube audio",
+  title: "Live Stream Chyron Pipeline",
+  description: "Live transcription and broadcast chyron suggestions from direct stream audio",
 };
 
 export default function RootLayout({

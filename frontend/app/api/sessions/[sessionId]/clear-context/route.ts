@@ -12,10 +12,17 @@ export async function POST(_request: Request, { params }: Params) {
   const { sessionId } = await params;
   const supabase = createServiceSupabaseClient();
 
-  const { error: segmentError } = await supabase.from("transcript_segments").delete().eq("session_id", sessionId);
+  const [{ error: segmentError }, { error: batchError }] = await Promise.all([
+    supabase.from("transcript_segments").delete().eq("session_id", sessionId),
+    supabase.from("chyron_batches").delete().eq("session_id", sessionId),
+  ]);
 
   if (segmentError) {
     return NextResponse.json({ detail: segmentError.message }, { status: 500 });
+  }
+
+  if (batchError) {
+    return NextResponse.json({ detail: batchError.message }, { status: 500 });
   }
 
   const { data: session, error: sessionError } = await supabase

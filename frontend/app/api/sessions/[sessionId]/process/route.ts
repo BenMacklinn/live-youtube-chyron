@@ -23,6 +23,9 @@ export async function POST(request: Request, { params }: Params) {
     const requestOrigin = new URL(request.url).origin;
     after(async () => {
       try {
+        if (result.nextDelayMs) {
+          await new Promise((resolve) => setTimeout(resolve, result.nextDelayMs));
+        }
         await kickOffProcessing(requestOrigin, sessionId);
       } catch (error) {
         console.error("Failed to continue processing", error);

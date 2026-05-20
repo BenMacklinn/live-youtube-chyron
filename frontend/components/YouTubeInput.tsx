@@ -1,10 +1,7 @@
 "use client";
 
 type Props = {
-  url: string;
-  startAt: string;
-  onUrlChange: (url: string) => void;
-  onStartAtChange: (startAt: string) => void;
+  sourceUrl?: string;
   onStart: () => void;
   onStop: () => void;
   isRunning: boolean;
@@ -12,34 +9,34 @@ type Props = {
 };
 
 export function YouTubeInput({
-  url,
-  startAt,
-  onUrlChange,
-  onStartAtChange,
+  sourceUrl,
   onStart,
   onStop,
   isRunning,
   disabled,
 }: Props) {
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => onUrlChange(e.target.value)}
-          placeholder="https://www.youtube.com/watch?v=..."
-          disabled={isRunning || disabled}
-          className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
+    <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Daily Newsmax stream</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Uses the latest HLS source from <span className="font-mono">newsmax-delta.vercel.app/api/latest-clipper</span>.
+          </p>
+          {sourceUrl && (
+            <p className="mt-2 break-all text-xs text-zinc-400">
+              Active source: <span className="font-mono">{sourceUrl}</span>
+            </p>
+          )}
+        </div>
         {!isRunning ? (
           <button
             type="button"
             onClick={onStart}
-            disabled={disabled || !url.trim()}
+            disabled={disabled}
             className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Start
+            Start Daily Stream
           </button>
         ) : (
           <button
@@ -50,21 +47,6 @@ export function YouTubeInput({
             Stop
           </button>
         )}
-      </div>
-      <div className="flex items-center gap-3">
-        <label htmlFor="start-at" className="shrink-0 text-sm text-zinc-500">
-          Start at
-        </label>
-        <input
-          id="start-at"
-          type="text"
-          value={startAt}
-          onChange={(e) => onStartAtChange(e.target.value)}
-          placeholder="10:00"
-          disabled={isRunning || disabled}
-          className="w-28 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
-        <span className="text-xs text-zinc-400">mm:ss or minutes (e.g. 10 = 10:00)</span>
       </div>
     </div>
   );

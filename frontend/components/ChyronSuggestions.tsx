@@ -122,7 +122,7 @@ export function ChyronSuggestions({
                 <input
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
-                  maxLength={60}
+                  maxLength={39}
                   className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900"
                 />
                 <div className="flex gap-2">

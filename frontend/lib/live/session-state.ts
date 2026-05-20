@@ -13,34 +13,36 @@ export async function loadSessionSnapshot(supabase: SupabaseClient<Database>, se
     throw new Error(sessionError?.message || "Session not found");
   }
 
-  const [{ data: segments, error: segmentsError }, { data: memory, error: memoryError }, { data: latestBatch, error: batchError }] =
-    await Promise.all([
-      supabase
-        .from("transcript_segments")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true })
-        .limit(200),
-      supabase
-        .from("chyron_memory")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: true })
-        .limit(200),
-      supabase
-        .from("chyron_batches")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
+  const [{ data: segments, error: segmentsError }, { data: memory, error: memoryError }] = await Promise.all([
+    supabase
+      .from("transcript_segments")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true })
+      .limit(200),
+    supabase
+      .from("chyron_memory")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true })
+      .limit(200),
+  ]);
 
   if (segmentsError) throw new Error(segmentsError.message);
   if (memoryError) throw new Error(memoryError.message);
-  if (batchError) throw new Error(batchError.message);
 
   let latestSuggestions = null;
+  let latestBatch = null;
+  if (session.latest_batch_id) {
+    const { data, error: batchError } = await supabase
+      .from("chyron_batches")
+      .select("*")
+      .eq("id", session.latest_batch_id)
+      .maybeSingle();
+    if (batchError) throw new Error(batchError.message);
+    latestBatch = data;
+  }
+
   if (latestBatch) {
     const { data: options, error: optionsError } = await supabase
       .from("chyron_options")
