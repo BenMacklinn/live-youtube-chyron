@@ -8,37 +8,57 @@ type Params = {
   params: Promise<{ sessionId: string }>;
 };
 
-export async function POST(_request: Request, { params }: Params) {
+export async function POST(request: Request, { params }: Params) {
   const { sessionId } = await params;
+  const body = await request.json().catch(() => ({}));
+  const rolling = body.rolling === true;
   const supabase = createServiceSupabaseClient();
 
-  const [{ error: segmentError }, { error: batchError }] = await Promise.all([
-    supabase.from("transcript_segments").delete().eq("session_id", sessionId),
-    supabase.from("chyron_batches").delete().eq("session_id", sessionId),
-  ]);
+  const { data: current, error: loadError } = await supabase
+    .from("live_sessions")
+    .select("context_version")
+    .eq("id", sessionId)
+    .single();
+
+  if (loadError || !current) {
+    return NextResponse.json({ detail: loadError?.message || "Session not found" }, { status: 404 });
+  }
+
+  const nextContextVersion = Number(current.context_version ?? 0) + 1;
+
+  const { error: segmentError } = await supabase.from("transcript_segments").delete().eq("session_id", sessionId);
 
   if (segmentError) {
     return NextResponse.json({ detail: segmentError.message }, { status: 500 });
   }
 
-  if (batchError) {
-    return NextResponse.json({ detail: batchError.message }, { status: 500 });
+  if (!rolling) {
+    const { error: batchError } = await supabase.from("chyron_batches").delete().eq("session_id", sessionId);
+    if (batchError) {
+      return NextResponse.json({ detail: batchError.message }, { status: 500 });
+    }
   }
+
+  const sessionPatch = {
+    session_summary: "",
+    last_topic: "",
+    known_entities: [],
+    topic_history: [],
+    context_version: nextContextVersion,
+    last_generation_version: nextContextVersion,
+    context_cleared_at: new Date().toISOString(),
+    last_transcript_text: "",
+    ...(rolling
+      ? {}
+      : {
+          latest_batch_id: null,
+          latest_verbatim: "",
+        }),
+  };
 
   const { data: session, error: sessionError } = await supabase
     .from("live_sessions")
-    .update({
-      session_summary: "",
-      last_topic: "",
-      known_entities: [],
-      topic_history: [],
-      context_version: 0,
-      last_generation_version: 0,
-      context_cleared_at: new Date().toISOString(),
-      latest_batch_id: null,
-      latest_verbatim: "",
-      last_transcript_text: "",
-    })
+    .update(sessionPatch)
     .eq("id", sessionId)
     .select("id")
     .single();
@@ -49,8 +69,9 @@ export async function POST(_request: Request, { params }: Params) {
 
   await publishSessionEvent(supabase, sessionId, "context.cleared", {
     type: "context.cleared",
+    rolling,
     timestamp: Date.now() / 1000,
   });
 
-  return NextResponse.json({ status: "cleared" });
+  return NextResponse.json({ status: "cleared", rolling });
 }

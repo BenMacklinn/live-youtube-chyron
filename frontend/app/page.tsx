@@ -105,12 +105,16 @@ export default function Home() {
         });
         break;
       case "context.cleared":
-        setSegments([]);
-        setPartial("");
-        setSuggestions(null);
-        setVerbatimCaption("");
-        setNextChyronBatchAt(null);
-        setContextNotice("Context cleared. The next chyron batch will start fresh.");
+        if (!msg.rolling) {
+          setSegments([]);
+          setPartial("");
+          setSuggestions(null);
+          setVerbatimCaption("");
+          setNextChyronBatchAt(null);
+          setContextNotice("Context cleared. The next chyron batch will start fresh.");
+        } else {
+          setContextNotice("AI context rolled (60s). On-screen chyrons unchanged.");
+        }
         break;
       case "guidance.updated":
         setProducerGuidance(msg.guidance);
@@ -274,14 +278,17 @@ export default function Home() {
   const handleClearContext = useCallback(
     async (source: "manual" | "auto" = "manual") => {
       if (!sessionId) return;
-      applyContextClearedLocally();
-      setContextNotice(
-        source === "auto"
-          ? "Context auto-cleared (60s rolling window)."
-          : "Context cleared. The next chyron batch will start fresh.",
-      );
+      const rolling = source === "auto";
+
+      if (!rolling) {
+        applyContextClearedLocally();
+        setContextNotice("Context cleared. The next chyron batch will start fresh.");
+      } else {
+        setContextNotice("AI context rolled (60s). On-screen chyrons unchanged.");
+      }
+
       try {
-        await clearSessionContext(sessionId);
+        await clearSessionContext(sessionId, { rolling });
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to clear context");
       }
@@ -345,7 +352,7 @@ export default function Home() {
               Clear Context
             </button>
             {isRunning && (
-              <span className="text-xs text-zinc-500">Auto-clears every 60s</span>
+              <span className="text-xs text-zinc-500">AI context rolls every 60s (keeps chyrons on screen)</span>
             )}
           </div>
           <p className="text-sm text-zinc-500">
