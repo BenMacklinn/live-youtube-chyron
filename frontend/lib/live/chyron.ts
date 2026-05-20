@@ -5,8 +5,16 @@ import { headChars, normalizeChyronText } from "./text";
 export const CHYRON_MAX_CHARS = 39;
 const CHYRON_TARGET_CHARS = 34;
 
+const CHYRON_HEADLINE_VOICE = `Headline voice (critical):
+- Write broad broadcast lower-thirds — the general topic, theme, or question-turned-statement for this segment
+- Zoom out from the last sentence: what is the conversation about at a high level, not the tactical step they just mentioned
+- Never write commands, tips, or how-to lines (don't, use, be, try, get, stop, edit, avoid, make, start, keep, you, your)
+- Never headline a single tool, workflow step, or piece of advice unless that is the whole segment theme
+- Prefer broad topic patterns: theme + context, industry + issue, org + big idea, question distilled to a statement headline`;
+
 const CHYRON_WRITING = `Writing chyrons (critical — do this before you output JSON):
-1. Draft each headline in ALL CAPS as a complete phrase — a viewer must understand the beat without more context
+${CHYRON_HEADLINE_VOICE}
+1. Draft each headline in ALL CAPS as a complete phrase — a viewer must understand the general beat without more context
 2. Count every character (letters, spaces, punctuation). The text must be ${CHYRON_MAX_CHARS} or fewer; aim for ${CHYRON_TARGET_CHARS} or less so you never brush the limit
 3. If the line is too long or ends on a dangling word (to, on, for, with, and, or, the, a, in, of), rewrite shorter — do not truncate, do not cut mid-thought
 4. Prefer shorter structure over cramming: drop words, use tighter nouns — never leave an incomplete trailing phrase to fit the limit
@@ -15,7 +23,7 @@ const CHYRON_WRITING = `Writing chyrons (critical — do this before you output 
 
 const SHARED_RULES = `Shared rules (both modes):
 - Return 3-5 chyron options in ALL CAPS
-- Be specific to what speakers are discussing right now
+- Stay broad: segment themes and general topics, not sentence-level detail or advice fragments
 - Do not repeat chyrons listed as recently approved or rejected
 - Do not invent facts not supported by the transcript
 
@@ -23,11 +31,15 @@ ${CHYRON_WRITING}
 
 Questions → statement chyrons (both modes):
 - Actively listen for questions in the transcript — spoken or implied
-- When a question drives the conversation, answer it with a concrete fact or development from the transcript — not a meta label about the conversation
-- Rephrase from interrogative to statement: strip filler, keep names/numbers/events, never end with a question mark
-- Bad conversions use abstract framing (chart vs narrative, tension, debate, outlook) without stating what actually happened
-- Good conversions name the subject and state the beat (who, what, how much, what changed)
-- When recent speech centers on a question, include at least one question-derived chyron among your options`;
+- When a question drives the conversation, turn it into a broad statement headline about the underlying theme — not a micro-answer, meta label, or command
+- Rephrase from interrogative to statement: strip filler, keep the core subject, never end with a question mark
+- Bad conversions: imperatives, workflow steps, abstract framing without a topic (chart vs narrative, tension, debate), or hyper-specific facts from one clause
+- Good conversions: broad thematic statements a viewer would recognize as the segment topic
+- When recent speech centers on a question, include at least one broad question-derived chyron among your options
+
+Granularity:
+- Default to general topic headlines for interviews, panels, and advice segments
+- Only go tighter (company, number, event) when the transcript is clearly hard news or a breaking development — and still keep the line broad enough to read as a segment title`;
 
 const JSON_SCHEMA = `Respond with JSON only:
 {
@@ -40,13 +52,13 @@ const JSON_SCHEMA = `Respond with JSON only:
 
 const GUEST_SYSTEM_PROMPT = `You generate live broadcast chyrons for a GUEST segment.
 
-Generation mode: Guest — same headline style as timeline: topic-first, concrete, complete phrases within the character limit.
+Generation mode: Guest — broad topic and question-statement headlines, same style as timeline.
 
 Your chyrons should:
-- Capture the current news beat — the topic, story, or development being discussed
-- Ground headlines in concrete nouns from the transcript: people, places, organizations, events, numbers
-- Use guest name or company from the user message only when it fits naturally — never force name or company into every line
-- Lead with the story; add guest or org detail only when there is room
+- Capture the general theme of what the guest and hosts are discussing
+- Turn questions into broad statement headlines about the segment topic
+- Use guest name or company only when it helps identify the theme — never force name or company into every line
+- Lead with the big idea; avoid tool names, workflow steps, and sentence-level detail
 
 ${SHARED_RULES}
 
@@ -54,14 +66,14 @@ ${JSON_SCHEMA}`;
 
 const TIMELINE_SYSTEM_PROMPT = `You generate live broadcast chyrons for general TIMELINE coverage.
 
-Generation mode: Timeline — no guest interview framing. Headlines reflect the news topic or conversation beat.
+Generation mode: Timeline — broad news and conversation topics, not guest-interview labels unless the whole segment is about one person.
 
 Your chyrons should:
-- Capture the current news beat — the topic, story, or development being discussed
-- Ground headlines in concrete nouns from the transcript: people, places, organizations, events, numbers — use org or topic when a full personal name is too long
-- Never write meta or analyst-style labels (vs, narrative, outlook, tension) when the transcript has actual facts to use
-- Write general coverage lower-thirds, not guest-interview labels, unless the transcript is clearly about a specific person
-- Lead with the story; add detail only when it fits the character limit
+- Capture the general topic or news theme of the current segment
+- Turn questions into broad statement headlines
+- Use org or person names only when they define the segment theme — not every passing mention
+- Write segment-title lower-thirds, not play-by-play of the last few sentences
+- Never write meta or analyst-style labels (vs, narrative, outlook, tension) when a clear topic exists
 
 ${SHARED_RULES}
 
@@ -131,10 +143,10 @@ export function buildChyronPrompt(
         `Optional on-air guest context (include in a chyron only when it fits — not required on every line):\nName: ${guestName || "—"}\nCompany / show: ${guestCompany || "—"}`,
       );
     } else {
-      parts.push("Guest segment mode — topic-driven headlines from the transcript (same style as timeline).");
+      parts.push("Guest segment mode — broad topic headlines from the transcript (same style as timeline).");
     }
   } else {
-    parts.push("Timeline mode — topic-driven headlines from the transcript.");
+    parts.push("Timeline mode — broad topic headlines from the transcript.");
   }
 
   if (approved.length > 0) {
@@ -155,10 +167,18 @@ export function buildChyronPrompt(
   };
 }
 
+function looksLikeImperativeChyron(text: string) {
+  if (/\b(YOU|YOUR)\b/.test(text)) return true;
+  return /^(DON'T|DONT|DO NOT|USE|BE |BE$|TRY|GET |GET$|STOP|EDIT|AVOID|MAKE|TAKE|START|KEEP|NEVER|ALWAYS|LEARN|BUILD|WRITE|SET |SET$|GO |GO$|STAY|RUN|FIX|SKIP|ADD|PUT|PLAN|THINK|FOCUS)\b/.test(
+    text,
+  );
+}
+
 function isPublishableChyronOption(text: string, rationale: string, charCount?: number) {
   if (text.length > CHYRON_MAX_CHARS) return false;
   if (typeof charCount === "number" && charCount > CHYRON_MAX_CHARS) return false;
   if (/too long|over limit|exceeds.*limit|did not fit|removed draft/i.test(rationale)) return false;
+  if (looksLikeImperativeChyron(text)) return false;
   return true;
 }
 
