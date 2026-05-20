@@ -15,32 +15,57 @@ from usage_tracker import UsageTracker
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
+CHYRON_MAX_CHARS = 39
 
-You receive:
-1. A persistent session summary (conversation so far — refine it, do not discard prior context)
-2. A recent transcript window (last ~60 seconds of speech — for immediacy)
-3. Known entities and topic history from earlier in the session
+SYSTEM_PROMPT = f"""You generate live broadcast chyrons (lower-third headlines) from speech transcripts.
 
-Your job each cycle:
-1. REFINE the session summary — merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
-2. Identify the current main topic or key moment.
-3. Generate 3-5 short broadcast-style chyron options in ALL CAPS.
-4. Every chyron option MUST be fewer than 39 characters, including spaces and punctuation.
-5. Chyrons should reflect the FULL refined session context, weighted toward what is happening NOW in the recent window.
-6. Do not repeat recently approved or rejected chyrons.
-7. If context is ambiguous, return fewer options rather than inventing facts.
-8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
-9. Keep the session summary compact. It should be a memory aid, not a transcript.
+Rules:
+- Return 3-5 chyron options in ALL CAPS
+- Each chyron must be {CHYRON_MAX_CHARS} characters or fewer, including spaces and punctuation
+- Headlines should reflect what speakers are discussing right now
+- Be specific; use names, places, and facts from the transcript
+- Do not repeat chyrons listed as recently approved or rejected
+- Do not invent facts not supported by the transcript
 
-Respond with valid JSON only:
-{
-  "sessionSummary": "2-5 sentences refining the full conversation so far",
-  "topic": "current main topic",
-  "entities": ["names, orgs, key terms"],
-  "chyronOptions": [{"text": "string", "rationale": "string"}],
-  "verbatimCaption": "string"
-}"""
+Respond with JSON only:
+{{
+  "sessionSummary": "brief running summary of the conversation",
+  "recentSummary": "one plain-language sentence on what they're discussing now",
+  "chyronOptions": [{{"text": "ALL CAPS headline"}}],
+  "verbatimCaption": "cleaned subtitle text for the recent speech"
+}}"""
+
+
+def _build_user_prompt(buffer: ContextBuffer) -> str:
+    recent = buffer.recent_transcript(settings.context_recent_transcript_max_chars)
+    parts: list[str] = []
+
+    if buffer.session_summary.strip():
+        parts.append(
+            "Session summary so far (refine, do not discard prior context):\n"
+            f"{buffer.session_summary}"
+        )
+
+    parts.append(f"Recent transcript (last {buffer.window_sec}s):\n{recent}")
+    parts.append(
+        f"Keep sessionSummary under {settings.context_summary_max_chars} characters."
+    )
+
+    approved = buffer.recent_approved_chyrons()
+    rejected = buffer.recent_rejected_chyrons()
+    if approved:
+        parts.append(f"Recently approved (do not repeat): {json.dumps(approved)}")
+    if rejected:
+        parts.append(f"Recently rejected (do not repeat): {json.dumps(rejected)}")
+
+    return "\n\n".join(parts)
+
+
+def _normalize_option(text: str) -> str:
+    cleaned = text.strip().upper()
+    if not cleaned or len(cleaned) > CHYRON_MAX_CHARS:
+        return cleaned[:CHYRON_MAX_CHARS].strip()
+    return cleaned
 
 
 class ChyronGenerator:
@@ -134,26 +159,11 @@ class ChyronGenerator:
         if not recent.strip():
             return None
 
-        user_prompt = f"""Persistent session summary (refine this — do not wipe prior context):
-{self.buffer.session_summary or "None yet — start building from the recent transcript below."}
-
-Recent transcript (last {self.buffer.window_sec}s):
-{recent}
-
-Summary budget: keep the next sessionSummary under {settings.context_summary_max_chars} characters.
-Topic history: {json.dumps(self.buffer.topic_history)}
-Known entities: {json.dumps(self.buffer.known_entities)}
-Recent approved chyrons (avoid repeating): {json.dumps(self.buffer.recent_approved_chyrons())}
-Recent rejected chyrons (avoid repeating): {json.dumps(self.buffer.recent_rejected_chyrons())}
-
-Mode preference: {self.mode}
-"""
-
         response = await self._client.chat.completions.create(
             model=settings.chyron_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
+                {"role": "user", "content": _build_user_prompt(self.buffer)},
             ],
             response_format={"type": "json_object"},
         )
@@ -170,30 +180,44 @@ Mode preference: {self.mode}
         parsed = json.loads(content)
 
         batch_id = str(uuid.uuid4())
+        skip = {
+            text.strip().upper()
+            for text in (
+                self.buffer.recent_approved_chyrons()
+                + self.buffer.recent_rejected_chyrons()
+            )
+        }
         options = []
-        for i, opt in enumerate(parsed.get("chyronOptions", [])[:5]):
+        for i, opt in enumerate(parsed.get("chyronOptions", [])[:8]):
+            text = _normalize_option(str(opt.get("text", "")))
+            if not text or len(text) < 8 or text in skip:
+                continue
             options.append(
                 {
-                    "id": f"{batch_id}-{i}",
-                    "text": str(opt.get("text", "")).upper()[:39],
+                    "id": f"{batch_id}-{len(options)}",
+                    "text": text,
                     "rationale": opt.get("rationale", ""),
                 }
             )
+            if len(options) >= 5:
+                break
 
-        session_summary = parsed.get("sessionSummary", "")
-        topic = parsed.get("topic", "")
-        entities = parsed.get("entities", [])
-
-        self.buffer.update_from_generation(session_summary, topic, entities)
+        session_summary = str(parsed.get("sessionSummary", "")).strip()
+        self.buffer.update_from_generation(
+            session_summary,
+            "",
+            [],
+        )
         self.buffer.mark_generation_complete()
 
         payload = {
             "batchId": batch_id,
             "sessionSummary": self.buffer.session_summary,
-            "topic": topic,
-            "entities": self.buffer.known_entities,
+            "topic": "",
+            "entities": [],
             "chyronOptions": options,
             "verbatimCaption": parsed.get("verbatimCaption", ""),
+            "recentSummary": parsed.get("recentSummary", ""),
             "chyronCadenceSec": settings.chyron_cadence_sec,
             "nextBatchAt": time.time() + settings.chyron_cadence_sec,
         }
