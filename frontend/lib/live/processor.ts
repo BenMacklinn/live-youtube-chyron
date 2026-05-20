@@ -16,7 +16,7 @@ import { audioBytesForSeconds, usagePayload } from "./usage";
 const CHYRON_MAX_CHARS = 39;
 
 const CHYRON_STYLE_RULES = `Chyron title style (critical):
-- Every chyron MUST include the guest name and company/show from guest context below. Tie the line to both — e.g. "[Name] on [topic at company]" or "[Company]: [topic with name]".
+- When guest name and company/show are provided below, every chyron MUST include the guest name and reference the company/show (use "[Name] on [topic]" or "[Company]: [name on topic]" — fit within the character limit).
 - Specific, not broad: one tight news beat from the current transcript topic — never a sector headline with no who/what.
 - Structure: "[Guest name] on [topic]", "[Company] [verb] [development]", or "[Name] on [what they are discussing]" using the supplied guest fields.
 - Every chyron must read as a finished phrase within the character limit. Never end on dangling words (to, on, about, into, for, with) or cut off mid-thought.
@@ -24,7 +24,7 @@ const CHYRON_STYLE_RULES = `Chyron title style (critical):
 - Ban mood or meta labels (pressured, speaks out, heated exchange, turns to, pivot to) — state the actual topic instead.
 - If the transcript topic is unclear, still anchor to the guest name and company with the best-supported topic; return fewer options rather than going generic.`;
 
-const CHYRON_QUALITY_USER_NOTE = `Chyron bar: Every option must contain both the guest name and company/show from guest context. Pull the topic from the recent transcript. Complete thought only — max ${CHYRON_MAX_CHARS} characters, no trailing prepositions.`;
+const CHYRON_QUALITY_USER_NOTE = `Chyron bar: When guest context is provided, every option must include the guest name and tie to the company/show. Pull the topic from the recent transcript. Complete thought only — max ${CHYRON_MAX_CHARS} characters, no trailing prepositions.`;
 
 const PERSISTENT_SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
 
@@ -32,7 +32,7 @@ You receive:
 1. A persistent session summary (conversation so far - refine it, do not discard prior context)
 2. A recent transcript window (last ~60 seconds of speech - for immediacy)
 3. Known entities and topic history from earlier in the session
-4. Required guest name and company/show from the control room (who is on air)
+4. Guest name and company/show from the control room when the producer has set them (who is on air)
 
 Your job each cycle:
 1. REFINE the session summary - merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
@@ -111,15 +111,19 @@ Company / show: ${company}`;
 function chyronIncludesGuest(text: string, session: LiveSessionRow) {
   const name = session.guest_name?.trim().toUpperCase() ?? "";
   const company = session.guest_company?.trim().toUpperCase() ?? "";
-  if (!name || !company) return false;
 
   const nameParts = name.split(/\s+/).filter((part) => part.length >= 2);
-  const hasName = nameParts.some((part) => text.includes(part)) || text.includes(name);
+  const hasName =
+    !name || nameParts.some((part) => text.includes(part)) || (name.length >= 3 && text.includes(name));
 
-  const companyParts = company.split(/\s+/).filter((part) => part.length >= 3);
-  const hasCompany = companyParts.some((part) => text.includes(part)) || text.includes(company);
+  const companyParts = company.split(/\s+/).filter((part) => part.length >= 2);
+  const hasCompany =
+    !company || companyParts.some((part) => text.includes(part)) || (company.length >= 2 && text.includes(company));
 
-  return hasName && hasCompany;
+  if (name && company) return hasName;
+  if (name) return hasName;
+  if (company) return hasCompany;
+  return true;
 }
 
 function buildChyronPrompt(session: LiveSessionRow, recentTranscript: string, approved: string[], rejected: string[]) {
@@ -234,8 +238,8 @@ function isUsableChyron(text: string, session: LiveSessionRow, anchors: string[]
   const nonGeneric = words.filter((word) => !CHYRON_GENERIC_WORDS.has(word));
   if (nonGeneric.length === 0) return false;
 
-  if (guestContextReady(session)) {
-    return chyronIncludesGuest(text, session);
+  if (session.guest_name?.trim() || session.guest_company?.trim()) {
+    if (!chyronIncludesGuest(text, session)) return false;
   }
 
   return chyronHasAnchor(text, anchors);
@@ -534,7 +538,6 @@ async function maybeGenerateChyrons(
 
   const recentTranscript = tailChars((segments ?? []).map((segment) => segment.text).join(" "), liveConfig.contextRecentTranscriptMaxChars);
   if (!recentTranscript.trim()) return;
-  if (!guestContextReady(session)) return;
 
   const approved = (memory ?? []).filter((entry) => entry.action === "approved").map((entry) => entry.text).slice(0, 8);
   const rejected = (memory ?? []).filter((entry) => entry.action === "rejected").map((entry) => entry.text).slice(0, 5);
@@ -580,8 +583,18 @@ async function maybeGenerateChyrons(
     ? parsed.chyronOptions.slice(0, 8)
     : [];
   const anchors = chyronAnchorTokens(session, entities);
-  const optionRows = buildChyronOptionRows(options, batchId, session, anchors);
-  if (optionRows.length === 0) return;
+  let optionRows = buildChyronOptionRows(options, batchId, session, anchors);
+
+  if (optionRows.length === 0 && options.length > 0) {
+    optionRows = options.slice(0, 5).map((option, index) => ({
+      id: `${batchId}-${index}`,
+      batch_id: batchId,
+      session_id: session.id,
+      option_index: index,
+      text: headChars(String(option.text ?? "").trim().toUpperCase(), CHYRON_MAX_CHARS),
+      rationale: String(option.rationale ?? ""),
+    }));
+  }
 
   const { error: batchError } = await supabase.from("chyron_batches").insert({
     id: batchId,

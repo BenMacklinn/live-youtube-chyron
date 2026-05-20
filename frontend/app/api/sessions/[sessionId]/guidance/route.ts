@@ -38,6 +38,7 @@ export async function POST(request: Request, { params }: Params) {
       guest_company: guestCompany,
       producer_guidance: "",
       context_version: Number(session.context_version ?? 0) + 1,
+      last_generation_at: null,
     })
     .eq("id", sessionId);
 
