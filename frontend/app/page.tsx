@@ -24,8 +24,6 @@ import {
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
-const AUTO_CLEAR_CONTEXT_MS = 60_000;
-
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
 
 function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
@@ -111,16 +109,12 @@ export default function Home() {
         });
         break;
       case "context.cleared":
-        if (!msg.rolling) {
-          setSegments([]);
-          setPartial("");
-          setSuggestions(null);
-          setVerbatimCaption("");
-          setNextChyronBatchAt(null);
-          setContextNotice("Context cleared. The next chyron batch will start fresh.");
-        } else {
-          setContextNotice("AI context rolled (60s). On-screen chyrons unchanged.");
-        }
+        setSegments([]);
+        setPartial("");
+        setSuggestions(null);
+        setVerbatimCaption("");
+        setNextChyronBatchAt(null);
+        setContextNotice("Context cleared. The next chyron batch will start fresh.");
         break;
       case "guidance.updated":
         setGuestContextState({ name: msg.guestName, company: msg.guestCompany });
@@ -281,26 +275,16 @@ export default function Home() {
     setNextChyronBatchAt(null);
   }, []);
 
-  const handleClearContext = useCallback(
-    async (source: "manual" | "auto" = "manual") => {
-      if (!sessionId) return;
-      const rolling = source === "auto";
-
-      if (!rolling) {
-        applyContextClearedLocally();
-        setContextNotice("Context cleared. The next chyron batch will start fresh.");
-      } else {
-        setContextNotice("AI context rolled (60s). On-screen chyrons unchanged.");
-      }
-
-      try {
-        await clearSessionContext(sessionId, { rolling });
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to clear context");
-      }
-    },
-    [sessionId, applyContextClearedLocally],
-  );
+  const handleClearContext = useCallback(async () => {
+    if (!sessionId) return;
+    applyContextClearedLocally();
+    setContextNotice("Context cleared. The next chyron batch will start fresh.");
+    try {
+      await clearSessionContext(sessionId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to clear context");
+    }
+  }, [sessionId, applyContextClearedLocally]);
 
   const handleClearGuest = async () => {
     if (!sessionId) return;
@@ -320,16 +304,6 @@ export default function Home() {
       setGuestSaving(false);
     }
   };
-
-  useEffect(() => {
-    if (!isRunning || !sessionId) return;
-
-    const intervalId = window.setInterval(() => {
-      void handleClearContext("auto");
-    }, AUTO_CLEAR_CONTEXT_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [isRunning, sessionId, handleClearContext]);
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
@@ -354,15 +328,12 @@ export default function Home() {
             <ModeToggle mode={mode} onChange={handleModeChange} disabled={!sessionId} />
             <button
               type="button"
-              onClick={() => void handleClearContext("manual")}
+              onClick={() => void handleClearContext()}
               disabled={!isRunning}
               className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
               Clear Context
             </button>
-            {isRunning && (
-              <span className="text-xs text-zinc-500">AI context rolls every 60s (keeps chyrons on screen)</span>
-            )}
           </div>
           <p className="text-sm text-zinc-500">
             Status: <span className="font-medium capitalize text-zinc-800 dark:text-zinc-200">{status}</span>
