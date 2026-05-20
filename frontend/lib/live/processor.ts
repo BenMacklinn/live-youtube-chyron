@@ -21,7 +21,7 @@ You receive:
 1. A persistent session summary (conversation so far - refine it, do not discard prior context)
 2. A recent transcript window (last ~60 seconds of speech - for immediacy)
 3. Known entities and topic history from earlier in the session
-4. Optional producer guidance typed by the control room (who is on, topic, upcoming question)
+4. Optional guest name and company/show typed by the control room (who is on air)
 
 Your job each cycle:
 1. REFINE the session summary - merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
@@ -50,7 +50,7 @@ const FRESH_CONTEXT_SYSTEM_PROMPT = `You are a broadcast producer assistant gene
 The producer just cleared session context. Treat this as a brand-new segment:
 - Ignore any prior topics, names, or story beats outside the recent transcript window below.
 - Build sessionSummary only from the recent transcript window.
-- Do not carry over people, places, or topics unless they appear in that window or in producer guidance.
+- Do not carry over people, places, or topics unless they appear in that window or in guest context.
 
 Your job each cycle:
 1. Write a compact session summary from the recent transcript only.
@@ -77,18 +77,27 @@ function contextWasCleared(session: LiveSessionRow) {
   return Boolean(session.context_cleared_at);
 }
 
-function producerGuidanceBlock(session: LiveSessionRow) {
-  const guidance = session.producer_guidance?.trim();
-  if (!guidance) return "";
+function guestContextBlock(session: LiveSessionRow) {
+  let name = session.guest_name?.trim() ?? "";
+  const company = session.guest_company?.trim() ?? "";
+  if (!name && !company && session.producer_guidance?.trim()) {
+    name = session.producer_guidance.trim();
+  }
+  if (!name && !company) return "";
+
+  const lines: string[] = [];
+  if (name) lines.push(`Guest name: ${name}`);
+  if (company) lines.push(`Company / show: ${company}`);
+
   return `
 
-Producer guidance (treat as ground truth for who is on air and the current angle — use even if not spoken yet):
-${guidance}`;
+Guest context (ground truth for who is on air — use in chyrons and summaries even if not spoken yet):
+${lines.join("\n")}`;
 }
 
 function buildChyronPrompt(session: LiveSessionRow, recentTranscript: string, approved: string[], rejected: string[]) {
   const fresh = contextWasCleared(session) && !session.session_summary.trim();
-  const guidance = producerGuidanceBlock(session);
+  const guidance = guestContextBlock(session);
 
   if (fresh) {
     return {

@@ -1,8 +1,13 @@
 "use client";
 
+export type GuestContextDraft = {
+  name: string;
+  company: string;
+};
+
 type Props = {
-  value: string;
-  onChange: (value: string) => void;
+  value: GuestContextDraft;
+  onChange: (value: GuestContextDraft) => void;
   onSubmit: () => void;
   onClearNudge?: () => void;
   disabled?: boolean;
@@ -21,8 +26,8 @@ export function ProducerGuidance({
   hasUnsavedChanges,
   hasNudge,
 }: Props) {
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
       e.preventDefault();
       if (!disabled && !saving) onSubmit();
     }
@@ -33,29 +38,44 @@ export function ProducerGuidance({
       <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Producer Guidance</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Guest Context</h2>
             <p className="mt-1 text-xs text-zinc-500">
-              Type who is on and what they are discussing — especially after Clear Context
+              Who is on air — especially after context rolls or a new guest joins
             </p>
           </div>
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
         </div>
       </header>
-      <div className="p-4">
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          rows={3}
-          maxLength={500}
-          placeholder={'e.g. "Tae Kim live on TBPN" — press Enter to apply'}
-          className="w-full resize-y rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm leading-relaxed text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="space-y-3 p-4">
+        <label className="block">
+          <span className="text-xs font-medium text-zinc-500">Name</span>
+          <input
+            type="text"
+            value={value.name}
+            onChange={(e) => onChange({ ...value, name: e.target.value })}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            maxLength={120}
+            placeholder="e.g. Tae Kim"
+            className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs font-medium text-zinc-500">Company / show</span>
+          <input
+            type="text"
+            value={value.company}
+            onChange={(e) => onChange({ ...value, company: e.target.value })}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            maxLength={120}
+            placeholder="e.g. TBPN"
+            className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+          />
+        </label>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <p className="text-xs text-zinc-400">
-            Press <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Enter</kbd> to
-            apply ground truth. <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Shift+Enter</kbd> for a new line.
+            Press <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Enter</kbd> in either field to apply.
           </p>
           <div className="flex gap-2">
             <button
@@ -64,7 +84,7 @@ export function ProducerGuidance({
               disabled={disabled || saving || !hasNudge}
               className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-900"
             >
-              Clear nudge
+              Clear guest
             </button>
             <button
               type="button"

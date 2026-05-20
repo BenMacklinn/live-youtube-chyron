@@ -13,12 +13,13 @@ type Params = {
 export async function POST(request: Request, { params }: Params) {
   const { sessionId } = await params;
   const body = await request.json().catch(() => ({}));
-  const guidance = headChars(String(body.guidance ?? "").trim(), liveConfig.producerGuidanceMaxChars);
+  const guestName = headChars(String(body.name ?? body.guestName ?? "").trim(), liveConfig.guestNameMaxChars);
+  const guestCompany = headChars(String(body.company ?? body.guestCompany ?? "").trim(), liveConfig.guestCompanyMaxChars);
   const supabase = createServiceSupabaseClient();
 
   const { data: session, error: loadError } = await supabase
     .from("live_sessions")
-    .select("id, context_version, producer_guidance")
+    .select("id, context_version, guest_name, guest_company")
     .eq("id", sessionId)
     .single();
 
@@ -26,14 +27,16 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ detail: loadError?.message || "Session not found" }, { status: 404 });
   }
 
-  if (session.producer_guidance === guidance) {
-    return NextResponse.json({ status: "ok", guidance });
+  if (session.guest_name === guestName && session.guest_company === guestCompany) {
+    return NextResponse.json({ status: "ok", guestName, guestCompany });
   }
 
   const { error: updateError } = await supabase
     .from("live_sessions")
     .update({
-      producer_guidance: guidance,
+      guest_name: guestName,
+      guest_company: guestCompany,
+      producer_guidance: "",
       context_version: Number(session.context_version ?? 0) + 1,
     })
     .eq("id", sessionId);
@@ -44,9 +47,10 @@ export async function POST(request: Request, { params }: Params) {
 
   await publishSessionEvent(supabase, sessionId, "guidance.updated", {
     type: "guidance.updated",
-    guidance,
+    guestName,
+    guestCompany,
     timestamp: Date.now() / 1000,
   });
 
-  return NextResponse.json({ status: "ok", guidance });
+  return NextResponse.json({ status: "ok", guestName, guestCompany });
 }

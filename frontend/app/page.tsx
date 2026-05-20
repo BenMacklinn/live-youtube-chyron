@@ -5,7 +5,7 @@ import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { ModeToggle } from "@/components/ModeToggle";
 import { UsagePanel } from "@/components/UsagePanel";
-import { ProducerGuidance } from "@/components/ProducerGuidance";
+import { ProducerGuidance, type GuestContextDraft } from "@/components/ProducerGuidance";
 import { YouTubeInput } from "@/components/YouTubeInput";
 import {
   approveChyron,
@@ -13,7 +13,7 @@ import {
   createSession,
   getSessionSnapshot,
   rejectChyron,
-  setProducerGuidance as saveProducerGuidance,
+  setGuestContext,
   setSessionMode,
   stopSession,
   type ApprovedLogEntry,
@@ -25,6 +25,12 @@ import {
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 const AUTO_CLEAR_CONTEXT_MS = 60_000;
+
+const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
+
+function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
+  return a.name.trim() === b.name.trim() && a.company.trim() === b.company.trim();
+}
 
 export default function Home() {
   const [url, setUrl] = useState("");
@@ -43,9 +49,9 @@ export default function Home() {
   const [contextNotice, setContextNotice] = useState("");
   const [nextChyronBatchAt, setNextChyronBatchAt] = useState<number | null>(null);
   const [liveConnection, setLiveConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
-  const [producerGuidance, setProducerGuidance] = useState("");
-  const [guidanceDraft, setGuidanceDraft] = useState("");
-  const [guidanceSaving, setGuidanceSaving] = useState(false);
+  const [guestContext, setGuestContextState] = useState<GuestContextDraft>(emptyGuestContext);
+  const [guestDraft, setGuestDraft] = useState<GuestContextDraft>(emptyGuestContext);
+  const [guestSaving, setGuestSaving] = useState(false);
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
 
   const isRunning = status === "connecting" || status === "transcribing";
@@ -117,8 +123,8 @@ export default function Home() {
         }
         break;
       case "guidance.updated":
-        setProducerGuidance(msg.guidance);
-        setGuidanceDraft(msg.guidance);
+        setGuestContextState({ name: msg.guestName, company: msg.guestCompany });
+        setGuestDraft({ name: msg.guestName, company: msg.guestCompany });
         break;
       default:
         break;
@@ -145,8 +151,8 @@ export default function Home() {
         setApprovedLog(snapshot.approvedLog);
         setUsage(snapshot.usage);
         setError(snapshot.error);
-        setProducerGuidance(snapshot.producerGuidance);
-        setGuidanceDraft(snapshot.producerGuidance);
+        setGuestContextState({ name: snapshot.guestName, company: snapshot.guestCompany });
+        setGuestDraft({ name: snapshot.guestName, company: snapshot.guestCompany });
         setNextChyronBatchAt(snapshot.latestSuggestions?.nextBatchAt ?? null);
       })
       .catch((e) => {
@@ -196,8 +202,8 @@ export default function Home() {
     setUsage(null);
     setContextNotice("");
     setNextChyronBatchAt(null);
-    setProducerGuidance("");
-    setGuidanceDraft("");
+    setGuestContextState(emptyGuestContext());
+    setGuestDraft(emptyGuestContext());
 
     try {
       const { sessionId: id } = await createSession("", mode, undefined, 0);
@@ -250,20 +256,20 @@ export default function Home() {
     }
   };
 
-  const handleGuidanceSubmit = async () => {
+  const handleGuestSubmit = async () => {
     if (!sessionId) return;
-    const guidance = guidanceDraft.trim();
-    if (guidance === producerGuidance) return;
+    const next = { name: guestDraft.name.trim(), company: guestDraft.company.trim() };
+    if (guestContextsEqual(next, guestContext)) return;
 
-    setGuidanceSaving(true);
+    setGuestSaving(true);
     try {
-      await saveProducerGuidance(sessionId, guidance);
-      setProducerGuidance(guidance);
-      setGuidanceDraft(guidance);
+      await setGuestContext(sessionId, next.name, next.company);
+      setGuestContextState(next);
+      setGuestDraft(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save guidance");
+      setError(e instanceof Error ? e.message : "Failed to save guest context");
     } finally {
-      setGuidanceSaving(false);
+      setGuestSaving(false);
     }
   };
 
@@ -296,19 +302,22 @@ export default function Home() {
     [sessionId, applyContextClearedLocally],
   );
 
-  const handleClearNudge = async () => {
+  const handleClearGuest = async () => {
     if (!sessionId) return;
-    if (!producerGuidance && !guidanceDraft.trim()) return;
+    if (!guestContext.name && !guestContext.company && !guestDraft.name.trim() && !guestDraft.company.trim()) {
+      return;
+    }
 
-    setGuidanceSaving(true);
+    setGuestSaving(true);
     try {
-      await saveProducerGuidance(sessionId, "");
-      setProducerGuidance("");
-      setGuidanceDraft("");
+      await setGuestContext(sessionId, "", "");
+      const cleared = emptyGuestContext();
+      setGuestContextState(cleared);
+      setGuestDraft(cleared);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to clear nudge");
+      setError(e instanceof Error ? e.message : "Failed to clear guest");
     } finally {
-      setGuidanceSaving(false);
+      setGuestSaving(false);
     }
   };
 
@@ -377,14 +386,22 @@ export default function Home() {
         <UsagePanel usage={usage} />
 
         <ProducerGuidance
-          value={guidanceDraft}
-          onChange={setGuidanceDraft}
-          onSubmit={handleGuidanceSubmit}
-          onClearNudge={() => void handleClearNudge()}
+          value={guestDraft}
+          onChange={setGuestDraft}
+          onSubmit={() => void handleGuestSubmit()}
+          onClearNudge={() => void handleClearGuest()}
           disabled={!sessionId}
-          saving={guidanceSaving}
-          hasUnsavedChanges={guidanceDraft.trim() !== producerGuidance}
-          hasNudge={Boolean(producerGuidance || guidanceDraft.trim())}
+          saving={guestSaving}
+          hasUnsavedChanges={!guestContextsEqual(
+            { name: guestDraft.name.trim(), company: guestDraft.company.trim() },
+            guestContext,
+          )}
+          hasNudge={Boolean(
+            guestContext.name ||
+              guestContext.company ||
+              guestDraft.name.trim() ||
+              guestDraft.company.trim(),
+          )}
         />
 
         <TranscriptChyronColumns

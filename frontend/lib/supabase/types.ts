@@ -24,6 +24,8 @@ export type LiveSessionRow = {
   last_generation_at: string | null;
   context_cleared_at: string | null;
   producer_guidance: string;
+  guest_name: string;
+  guest_company: string;
   last_transcript_text: string;
   audio_bytes_sent: number;
   chyron_input_tokens: number;
