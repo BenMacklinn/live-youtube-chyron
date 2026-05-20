@@ -32,12 +32,12 @@ Your job each cycle:
 7. If context is ambiguous, return fewer options rather than inventing facts.
 8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
 9. Keep the session summary compact. It should be a memory aid, not a transcript.
-10. Provide recentSummary: 2-3 short sentences in plain everyday English explaining what speakers are discussing in roughly the last ${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing—just what they are talking about right now.
+10. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
 
 Respond with valid JSON only:
 {
   "sessionSummary": "2-5 sentences refining the full conversation so far",
-  "recentSummary": "2-3 plain-language sentences about the last ~${liveConfig.recentSummaryWindowSec} seconds",
+  "recentSummary": "one short plain-language sentence, max ~25 words",
   "topic": "current main topic",
   "entities": ["names, orgs, key terms"],
   "chyronOptions": [{"text": "string", "rationale": "string"}],
@@ -60,12 +60,12 @@ Your job each cycle:
 6. Do not repeat recently approved or rejected chyrons.
 7. If context is ambiguous, return fewer options rather than inventing facts.
 8. Provide a cleaned verbatim caption for the recent window (subtitle mode).
-9. Provide recentSummary: 2-3 short sentences in plain everyday English explaining what speakers are discussing in roughly the last ${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing—just what they are talking about right now.
+9. Provide recentSummary: ONE crisp sentence (max ~25 words) in plain everyday English on what speakers are discussing in the last ~${liveConfig.recentSummaryWindowSec} seconds. No broadcast jargon, no ALL CAPS, no chyron phrasing.
 
 Respond with valid JSON only:
 {
   "sessionSummary": "2-5 sentences from the recent transcript only",
-  "recentSummary": "2-3 plain-language sentences about the last ~${liveConfig.recentSummaryWindowSec} seconds",
+  "recentSummary": "one short plain-language sentence, max ~25 words",
   "topic": "current main topic",
   "entities": ["names, orgs, key terms"],
   "chyronOptions": [{"text": "string", "rationale": "string"}],
