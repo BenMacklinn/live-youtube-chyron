@@ -1,15 +1,24 @@
 import type { ChyronGenerationMode, LiveSessionRow } from "@/lib/supabase/types";
 import { liveConfig } from "./config";
-import { fitChyronText, headChars } from "./text";
+import { headChars, normalizeChyronText } from "./text";
 
 export const CHYRON_MAX_CHARS = 39;
+const CHYRON_TARGET_CHARS = 34;
+
+const CHYRON_WRITING = `Writing chyrons (critical — do this before you output JSON):
+1. Draft each headline in ALL CAPS as a complete phrase — a viewer must understand the beat without more context
+2. Count every character (letters, spaces, punctuation). The text must be ${CHYRON_MAX_CHARS} or fewer; aim for ${CHYRON_TARGET_CHARS} or less so you never brush the limit
+3. If the line is too long or ends on a dangling word (to, on, for, with, and, or, the, a, in, of), rewrite shorter — do not truncate, do not cut mid-thought
+4. Prefer shorter structure over cramming: drop words, use tighter nouns, split name/topic across fewer words — never leave an incomplete trailing phrase to fit the limit
+5. Set charCount to text.length for each option; only include options where charCount <= ${CHYRON_MAX_CHARS} and the line reads finished`;
 
 const SHARED_RULES = `Shared rules (both modes):
 - Return 3-5 chyron options in ALL CAPS
-- Each chyron must be ${CHYRON_MAX_CHARS} characters or fewer, including spaces and punctuation
 - Be specific to what speakers are discussing right now
 - Do not repeat chyrons listed as recently approved or rejected
 - Do not invent facts not supported by the transcript
+
+${CHYRON_WRITING}
 
 Questions → statement chyrons (both modes):
 - Actively listen for questions in the transcript — spoken or implied
@@ -24,7 +33,7 @@ const JSON_SCHEMA = `Respond with JSON only:
   "sessionSummary": "brief running summary of the conversation",
   "recentSummary": "one plain-language sentence on what they're discussing now",
   "detectedQuestions": ["verbatim or paraphrased questions spotted in the transcript"],
-  "chyronOptions": [{"text": "ALL CAPS headline", "rationale": "brief note, especially if from a question"}],
+  "chyronOptions": [{"text": "ALL CAPS complete phrase", "charCount": 0, "rationale": "brief note"}],
   "verbatimCaption": "cleaned subtitle text for the recent speech"
 }`;
 
@@ -139,6 +148,10 @@ export function buildChyronPrompt(
     parts.push(`Recently rejected (do not repeat): ${JSON.stringify(rejected)}`);
   }
 
+  parts.push(
+    `Chyron limit: each text must be a complete phrase, ${CHYRON_MAX_CHARS} characters or fewer (aim ${CHYRON_TARGET_CHARS}). Count before you respond.`,
+  );
+
   return {
     mode,
     system: systemPromptForMode(mode),
@@ -175,7 +188,7 @@ export function buildChyronOptionRows(
   const rows: ChyronOptionRow[] = [];
 
   for (const option of options) {
-    const text = fitChyronText(option.text, CHYRON_MAX_CHARS);
+    const text = normalizeChyronText(option.text);
     if (!text || text.length < 8 || skipTexts.has(text)) continue;
 
     rows.push({
