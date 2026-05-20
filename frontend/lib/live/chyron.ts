@@ -11,7 +11,7 @@ const CHYRON_WRITING = `Writing chyrons (critical — do this before you output 
 3. If the line is too long or ends on a dangling word (to, on, for, with, and, or, the, a, in, of), rewrite shorter — do not truncate, do not cut mid-thought
 4. Prefer shorter structure over cramming: drop words, use tighter nouns — never leave an incomplete trailing phrase to fit the limit
 5. When a person's full name eats the limit, do not force it — keep the same style by leading with topic, company, or role instead of first + last name. Use last name only if it still fits; otherwise org or title plus the beat (the story matters more than spelling the whole name)
-6. Set charCount to text.length for each option; only include options where charCount <= ${CHYRON_MAX_CHARS} and the line reads finished`;
+6. Set charCount to text.length for each option. Only add passing options to chyronOptions — never list drafts that failed the limit. Do not put failure notes like "Too long—removed" in rationale; omit failed drafts and rewrite shorter options until you have 3-5 valid lines (or fewer if the transcript is thin)`;
 
 const SHARED_RULES = `Shared rules (both modes):
 - Return 3-5 chyron options in ALL CAPS
@@ -160,6 +160,13 @@ export function buildChyronPrompt(
   };
 }
 
+function isPublishableChyronOption(text: string, rationale: string, charCount?: number) {
+  if (text.length > CHYRON_MAX_CHARS) return false;
+  if (typeof charCount === "number" && charCount > CHYRON_MAX_CHARS) return false;
+  if (/too long|over limit|exceeds.*limit|did not fit|removed draft/i.test(rationale)) return false;
+  return true;
+}
+
 export function parseChyronResponse(raw: string): ChyronModelResponse {
   const parsed = JSON.parse(raw || "{}") as Record<string, unknown>;
   const options = Array.isArray(parsed.chyronOptions) ? parsed.chyronOptions : [];
@@ -170,12 +177,15 @@ export function parseChyronResponse(raw: string): ChyronModelResponse {
     recentSummary: String(parsed.recentSummary ?? "").trim(),
     verbatimCaption: String(parsed.verbatimCaption ?? "").trim(),
     detectedQuestions: questions.slice(0, 5).map((question) => String(question).trim()).filter(Boolean),
-    chyronOptions: options.slice(0, 8).map((option) => {
+    chyronOptions: options.slice(0, 8).flatMap((option) => {
       const row = option as Record<string, unknown>;
-      return {
-        text: String(row.text ?? "").trim(),
-        rationale: String(row.rationale ?? "").trim(),
-      };
+      const text = normalizeChyronText(String(row.text ?? ""));
+      const rationale = String(row.rationale ?? "").trim();
+      const charCount = typeof row.charCount === "number" ? row.charCount : undefined;
+      if (!text || text.length < 8 || !isPublishableChyronOption(text, rationale, charCount)) {
+        return [];
+      }
+      return [{ text, rationale }];
     }),
   };
 }
@@ -190,7 +200,7 @@ export function buildChyronOptionRows(
 
   for (const option of options) {
     const text = normalizeChyronText(option.text);
-    if (!text || text.length < 8 || skipTexts.has(text)) continue;
+    if (!text || text.length < 8 || text.length > CHYRON_MAX_CHARS || skipTexts.has(text)) continue;
 
     rows.push({
       id: `${batchId}-${rows.length}`,
