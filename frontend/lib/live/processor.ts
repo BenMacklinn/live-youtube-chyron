@@ -10,10 +10,11 @@ import { publishSessionEvent } from "./events";
 import { getFfmpegBinaryPath } from "./ffmpeg-binary";
 import { loadHlsPlaylist, type HlsSegment } from "./hls-playlist";
 import { resolveStreamInputUrl, streamSourceKind, type StreamSourceKind } from "./stream-source";
-import { dedupeOverlap, headChars, tailChars } from "./text";
+import { dedupeOverlap, fitChyronText, headChars, tailChars } from "./text";
 import { audioBytesForSeconds, usagePayload } from "./usage";
 
 const CHYRON_MAX_CHARS = 39;
+const CHYRON_TARGET_CHARS = 36;
 
 const CHYRON_STYLE_RULES = `Chyron title style (critical):
 - When guest name and company/show are provided below, every chyron MUST include the guest name and reference the company/show (use "[Name] on [topic]" or "[Company]: [name on topic]" — fit within the character limit).
@@ -24,7 +25,7 @@ const CHYRON_STYLE_RULES = `Chyron title style (critical):
 - Ban mood or meta labels (pressured, speaks out, heated exchange, turns to, pivot to) — state the actual topic instead.
 - If the transcript topic is unclear, still anchor to the guest name and company with the best-supported topic; return fewer options rather than going generic.`;
 
-const CHYRON_QUALITY_USER_NOTE = `Chyron bar: When guest context is provided, every option must include the guest name and tie to the company/show. Pull the topic from the recent transcript. Complete thought only — max ${CHYRON_MAX_CHARS} characters, no trailing prepositions.`;
+const CHYRON_QUALITY_USER_NOTE = `Chyron bar: When guest context is provided, every option must include the guest name and tie to the company/show. Pull the topic from the recent transcript. Each chyron text: complete thought, max ${CHYRON_MAX_CHARS} characters (count before output) — never write longer lines that will be truncated.`;
 
 const PERSISTENT_SYSTEM_PROMPT = `You are a broadcast producer assistant generating live chyron (lower-third) suggestions.
 
@@ -38,7 +39,7 @@ Your job each cycle:
 1. REFINE the session summary - merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
 2. Identify the current main topic or key moment.
 3. Generate 3-5 chyron options in ALL CAPS following the style rules below.
-4. Every chyron option MUST be fewer than ${CHYRON_MAX_CHARS} characters, including spaces and punctuation.
+4. Every chyron text MUST be ${CHYRON_MAX_CHARS} characters or fewer (count every letter, space, and punctuation before you respond). Aim for ${CHYRON_TARGET_CHARS} or less — shorter complete beats beat long lines that get cut off.
 5. Chyrons should reflect the FULL refined session context, weighted toward the current news beat in the recent window.
 6. Do not repeat recently approved or rejected chyrons.
 
@@ -54,7 +55,7 @@ Respond with valid JSON only:
   "recentSummary": "one short plain-language sentence, max ~25 words",
   "topic": "current main topic",
   "entities": ["names, orgs, key terms"],
-  "chyronOptions": [{"text": "string", "rationale": "string"}],
+  "chyronOptions": [{"text": "ALL CAPS, max ${CHYRON_MAX_CHARS} chars", "rationale": "string"}],
   "verbatimCaption": "string"
 }`;
 
@@ -69,7 +70,7 @@ Your job each cycle:
 1. Write a compact session summary from the recent transcript only.
 2. Identify the current main topic or key moment.
 3. Generate 3-5 chyron options in ALL CAPS following the style rules below.
-4. Every chyron option MUST be fewer than ${CHYRON_MAX_CHARS} characters, including spaces and punctuation.
+4. Every chyron text MUST be ${CHYRON_MAX_CHARS} characters or fewer (count before responding). Aim for ${CHYRON_TARGET_CHARS} or less.
 5. Chyrons should reflect the current news beat in the recent window.
 6. Do not repeat recently approved or rejected chyrons.
 
@@ -84,7 +85,7 @@ Respond with valid JSON only:
   "recentSummary": "one short plain-language sentence, max ~25 words",
   "topic": "current main topic",
   "entities": ["names, orgs, key terms"],
-  "chyronOptions": [{"text": "string", "rationale": "string"}],
+  "chyronOptions": [{"text": "ALL CAPS, max ${CHYRON_MAX_CHARS} chars", "rationale": "string"}],
   "verbatimCaption": "string"
 }`;
 
@@ -261,8 +262,42 @@ function buildChyronOptionRows(
   }> = [];
 
   for (const option of options) {
-    const text = headChars(String(option.text ?? "").trim().toUpperCase(), CHYRON_MAX_CHARS);
-    if (!isUsableChyron(text, session, anchors)) continue;
+    const text = fitChyronText(String(option.text ?? ""), CHYRON_MAX_CHARS);
+    if (!text || !isUsableChyron(text, session, anchors)) continue;
+
+    rows.push({
+      id: `${batchId}-${rows.length}`,
+      batch_id: batchId,
+      session_id: session.id,
+      option_index: rows.length,
+      text,
+      rationale: String(option.rationale ?? ""),
+    });
+
+    if (rows.length >= 5) break;
+  }
+
+  return rows;
+}
+
+function buildFallbackChyronOptionRows(
+  options: Array<{ text?: unknown; rationale?: unknown }>,
+  batchId: string,
+  session: LiveSessionRow,
+  anchors: string[],
+) {
+  const rows: Array<{
+    id: string;
+    batch_id: string;
+    session_id: string;
+    option_index: number;
+    text: string;
+    rationale: string;
+  }> = [];
+
+  for (const option of options) {
+    const text = fitChyronText(String(option.text ?? ""), CHYRON_MAX_CHARS);
+    if (!text || !isUsableChyron(text, session, anchors)) continue;
 
     rows.push({
       id: `${batchId}-${rows.length}`,
@@ -583,18 +618,9 @@ async function maybeGenerateChyrons(
     ? parsed.chyronOptions.slice(0, 8)
     : [];
   const anchors = chyronAnchorTokens(session, entities);
-  let optionRows = buildChyronOptionRows(options, batchId, session, anchors);
-
-  if (optionRows.length === 0 && options.length > 0) {
-    optionRows = options.slice(0, 5).map((option, index) => ({
-      id: `${batchId}-${index}`,
-      batch_id: batchId,
-      session_id: session.id,
-      option_index: index,
-      text: headChars(String(option.text ?? "").trim().toUpperCase(), CHYRON_MAX_CHARS),
-      rationale: String(option.rationale ?? ""),
-    }));
-  }
+  const strictRows = buildChyronOptionRows(options, batchId, session, anchors);
+  const optionRows =
+    strictRows.length > 0 ? strictRows : buildFallbackChyronOptionRows(options, batchId, session, anchors);
 
   const { error: batchError } = await supabase.from("chyron_batches").insert({
     id: batchId,
