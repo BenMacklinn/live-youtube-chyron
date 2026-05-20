@@ -33,11 +33,11 @@ ${CHYRON_WRITING}
 
 Questions → statement chyrons (both modes):
 - Actively listen for questions in the transcript — spoken or implied
-- When a question drives the conversation, turn it into a broad statement headline about the underlying theme — not a micro-answer, meta label, or command
-- Rephrase from interrogative to statement: strip filler, keep the core subject, never end with a question mark
-- Bad conversions: imperatives, workflow steps, abstract framing without a topic (chart vs narrative, tension, debate), or hyper-specific facts from one clause
-- Good conversions: broad thematic statements a viewer would recognize as the segment topic
-- When recent speech centers on a question, include at least one broad question-derived chyron among your options
+- When a question is driving the segment, include at least one chyron that summarizes that question as a statement headline — so a viewer tuning in late knows what is being answered
+- Keep the question's meaning: distill the same ask into shorter ALL CAPS phrasing, drop filler (you, your, we, so, like), never end with a question mark
+- Do not replace the question with an answer, a command, a workflow step, or vague meta framing — the headline should still read as the question being discussed
+- List spotted questions in detectedQuestions; when recent speech centers on a question, make question-summary chyrons a priority among your options
+- Bad conversions: imperatives, answers instead of the ask, abstract labels (chart vs narrative, tension, debate), or unrelated topic headlines when a clear question is on the table
 
 Granularity:
 - Default to general topic headlines for interviews, panels, and advice segments
@@ -60,7 +60,7 @@ Generation mode: Guest — broad topic and question-statement headlines, same st
 
 Your chyrons should:
 - Capture the general theme of what the guest and hosts are discussing
-- Turn questions into broad statement headlines about the segment topic
+- When a question is on the table, summarize that question as a statement headline so late viewers know what is being answered
 - Use guest name or company only when it helps identify the theme — never force name or company into every line
 - Lead with the big idea; avoid tool names, workflow steps, and sentence-level detail
 
@@ -74,7 +74,7 @@ Generation mode: Timeline — broad news and conversation topics, not guest-inte
 
 Your chyrons should:
 - Capture the general topic or news theme of the current segment
-- Turn questions into broad statement headlines
+- When a question is on the table, summarize that question as a statement headline so late viewers know what is being answered
 - Use org or person names only when they define the segment theme — not every passing mention
 - Write segment-title lower-thirds, not play-by-play of the last few sentences
 - Never write meta or analyst-style labels (vs, narrative, outlook, tension) when a clear topic exists
@@ -161,7 +161,7 @@ export function buildChyronPrompt(
   }
 
   parts.push(
-    `Chyron limit: each text must be a complete phrase, ${CHYRON_MAX_CHARS} characters or fewer (aim ${CHYRON_TARGET_CHARS}). Count before you respond.`,
+    `Chyron limit: each text must be a complete phrase, ${CHYRON_MAX_CHARS} characters or fewer (aim ${CHYRON_TARGET_CHARS}). Count before you respond. If the recent transcript has a clear question, at least one option must summarize that question as a statement for late viewers.`,
   );
 
   return {
