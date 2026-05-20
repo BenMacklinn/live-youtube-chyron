@@ -21,6 +21,7 @@ You receive:
 1. A persistent session summary (conversation so far - refine it, do not discard prior context)
 2. A recent transcript window (last ~60 seconds of speech - for immediacy)
 3. Known entities and topic history from earlier in the session
+4. Optional producer guidance typed by the control room (who is on, topic, upcoming question)
 
 Your job each cycle:
 1. REFINE the session summary - merge new speech into the running story. Keep names, topics, and key beats. Do not reset or wipe earlier context.
@@ -49,7 +50,7 @@ const FRESH_CONTEXT_SYSTEM_PROMPT = `You are a broadcast producer assistant gene
 The producer just cleared session context. Treat this as a brand-new segment:
 - Ignore any prior topics, names, or story beats outside the recent transcript window below.
 - Build sessionSummary only from the recent transcript window.
-- Do not carry over people, places, or topics unless they appear in that window.
+- Do not carry over people, places, or topics unless they appear in that window or in producer guidance.
 
 Your job each cycle:
 1. Write a compact session summary from the recent transcript only.
@@ -76,8 +77,18 @@ function contextWasCleared(session: LiveSessionRow) {
   return Boolean(session.context_cleared_at);
 }
 
+function producerGuidanceBlock(session: LiveSessionRow) {
+  const guidance = session.producer_guidance?.trim();
+  if (!guidance) return "";
+  return `
+
+Producer guidance (treat as ground truth for who is on air and the current angle — use even if not spoken yet):
+${guidance}`;
+}
+
 function buildChyronPrompt(session: LiveSessionRow, recentTranscript: string, approved: string[], rejected: string[]) {
   const fresh = contextWasCleared(session) && !session.session_summary.trim();
+  const guidance = producerGuidanceBlock(session);
 
   if (fresh) {
     return {
@@ -89,7 +100,7 @@ Summary budget: keep the next sessionSummary under ${liveConfig.contextSummaryMa
 Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
 Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
 
-Mode preference: ${session.mode}`,
+Mode preference: ${session.mode}${guidance}`,
     };
   }
 
@@ -107,7 +118,7 @@ Known entities: ${JSON.stringify(session.known_entities)}
 Recent approved chyrons (avoid repeating): ${JSON.stringify(approved)}
 Recent rejected chyrons (avoid repeating): ${JSON.stringify(rejected)}
 
-Mode preference: ${session.mode}`,
+Mode preference: ${session.mode}${guidance}`,
   };
 }
 

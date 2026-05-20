@@ -59,7 +59,8 @@ export type LiveMessage =
   | { type: "chyron.log"; text: string; timestamp: number }
   | { type: "chyron.rejected"; id: string }
   | { type: "mode.changed"; mode: SessionMode }
-  | { type: "context.cleared"; timestamp: number };
+  | { type: "context.cleared"; timestamp: number }
+  | { type: "guidance.updated"; guidance: string; timestamp: number };
 
 export type SessionSnapshot = {
   sessionId: string;
@@ -72,6 +73,7 @@ export type SessionSnapshot = {
   segments: string[];
   latestSuggestions: ChyronSuggestions | null;
   latestVerbatim: string;
+  producerGuidance: string;
   usage: UsageStats | null;
   error: string | null;
 };
@@ -133,6 +135,10 @@ export async function setSessionMode(sessionId: string, mode: SessionMode) {
 
 export async function clearSessionContext(sessionId: string) {
   await postSessionAction(sessionId, "clear-context", {});
+}
+
+export async function setProducerGuidance(sessionId: string, guidance: string) {
+  await postSessionAction(sessionId, "guidance", { guidance });
 }
 
 async function postSessionAction(sessionId: string, action: string, payload: object) {

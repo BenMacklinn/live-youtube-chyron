@@ -82,6 +82,7 @@ export async function loadSessionSnapshot(supabase: SupabaseClient<Database>, se
     segments: (segments ?? []).map((segment) => segment.text),
     latestSuggestions,
     latestVerbatim: session.latest_verbatim,
+    producerGuidance: session.producer_guidance ?? "",
     usage: usagePayload(session as LiveSessionRow),
     error: session.error,
   };

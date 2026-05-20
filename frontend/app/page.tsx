@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { ModeToggle } from "@/components/ModeToggle";
 import { UsagePanel } from "@/components/UsagePanel";
+import { ProducerGuidance } from "@/components/ProducerGuidance";
 import { YouTubeInput } from "@/components/YouTubeInput";
 import {
   approveChyron,
@@ -12,6 +13,7 @@ import {
   createSession,
   getSessionSnapshot,
   rejectChyron,
+  setProducerGuidance as saveProducerGuidance,
   setSessionMode,
   stopSession,
   type ApprovedLogEntry,
@@ -39,6 +41,10 @@ export default function Home() {
   const [contextNotice, setContextNotice] = useState("");
   const [nextChyronBatchAt, setNextChyronBatchAt] = useState<number | null>(null);
   const [liveConnection, setLiveConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
+  const [producerGuidance, setProducerGuidance] = useState("");
+  const [guidanceSaving, setGuidanceSaving] = useState(false);
+  const guidanceSaveTimer = useRef<number | null>(null);
+  const guidanceLastSaved = useRef("");
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
 
   const isRunning = status === "connecting" || status === "transcribing";
@@ -105,6 +111,10 @@ export default function Home() {
         setNextChyronBatchAt(null);
         setContextNotice("Context cleared. The next chyron batch will start fresh.");
         break;
+      case "guidance.updated":
+        setProducerGuidance(msg.guidance);
+        guidanceLastSaved.current = msg.guidance;
+        break;
       default:
         break;
     }
@@ -130,6 +140,8 @@ export default function Home() {
         setApprovedLog(snapshot.approvedLog);
         setUsage(snapshot.usage);
         setError(snapshot.error);
+        setProducerGuidance(snapshot.producerGuidance);
+        guidanceLastSaved.current = snapshot.producerGuidance;
         setNextChyronBatchAt(snapshot.latestSuggestions?.nextBatchAt ?? null);
       })
       .catch((e) => {
@@ -179,6 +191,8 @@ export default function Home() {
     setUsage(null);
     setContextNotice("");
     setNextChyronBatchAt(null);
+    setProducerGuidance("");
+    guidanceLastSaved.current = "";
 
     try {
       const { sessionId: id } = await createSession("", mode, undefined, 0);
@@ -229,6 +243,25 @@ export default function Home() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reject chyron");
     }
+  };
+
+  const handleGuidanceChange = (guidance: string) => {
+    setProducerGuidance(guidance);
+    if (!sessionId) return;
+
+    if (guidanceSaveTimer.current) window.clearTimeout(guidanceSaveTimer.current);
+    guidanceSaveTimer.current = window.setTimeout(async () => {
+      if (guidance === guidanceLastSaved.current) return;
+      setGuidanceSaving(true);
+      try {
+        await saveProducerGuidance(sessionId, guidance);
+        guidanceLastSaved.current = guidance;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to save guidance");
+      } finally {
+        setGuidanceSaving(false);
+      }
+    }, 600);
   };
 
   const handleClearContext = async () => {
@@ -296,6 +329,13 @@ export default function Home() {
         )}
 
         <UsagePanel usage={usage} />
+
+        <ProducerGuidance
+          value={producerGuidance}
+          onChange={handleGuidanceChange}
+          disabled={!sessionId}
+          saving={guidanceSaving}
+        />
 
         <TranscriptChyronColumns
           segments={segments}

@@ -10,6 +10,7 @@ export const liveConfig = {
   contextWindowSec: numberFromEnv("CONTEXT_WINDOW_SEC", 60),
   recentSummaryWindowSec: numberFromEnv("RECENT_SUMMARY_WINDOW_SEC", 30),
   recentSummaryMaxChars: numberFromEnv("RECENT_SUMMARY_MAX_CHARS", 160),
+  producerGuidanceMaxChars: numberFromEnv("PRODUCER_GUIDANCE_MAX_CHARS", 500),
   contextSummaryMaxChars: numberFromEnv("CONTEXT_SUMMARY_MAX_CHARS", 1200),
   contextRecentTranscriptMaxChars: numberFromEnv("CONTEXT_RECENT_TRANSCRIPT_MAX_CHARS", 6000),
   contextEntitiesLimit: numberFromEnv("CONTEXT_ENTITIES_LIMIT", 20),
