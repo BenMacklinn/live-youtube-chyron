@@ -1,7 +1,8 @@
 import "server-only";
 
 const DIRECT_STREAM_PROTOCOLS = new Set(["http:", "https:", "rtmp:", "rtmps:"]);
-const DEFAULT_STREAM_SOURCE_URL = "https://newsmax-delta.vercel.app/api/latest-clipper";
+const DEFAULT_STREAM_SOURCE_URL =
+  "https://d35dy04pnq6mdl.cloudfront.net/1/20260519T224132Z/index.m3u8";
 
 export type StreamSourceKind = "hls" | "direct";
 
@@ -44,6 +45,10 @@ export function streamSourceKind(sourceUrl: string): StreamSourceKind {
 
 async function loadDefaultStreamInputUrl(): Promise<string> {
   const endpoint = process.env.DEFAULT_STREAM_SOURCE_URL?.trim() || DEFAULT_STREAM_SOURCE_URL;
+  if (isSupportedStreamSource(endpoint)) {
+    return endpoint;
+  }
+
   const response = await fetch(endpoint, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to resolve daily stream URL: ${response.status} ${response.statusText}`);

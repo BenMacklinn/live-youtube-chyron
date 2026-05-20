@@ -19,9 +19,9 @@ export function YouTubeInput({
     <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Daily Newsmax stream</p>
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Live HLS stream</p>
           <p className="mt-1 text-xs text-zinc-500">
-            Uses the latest HLS source from <span className="font-mono">newsmax-delta.vercel.app/api/latest-clipper</span>.
+            Uses the configured CloudFront HLS source unless you pass a custom URL when starting a session.
           </p>
           {sourceUrl && (
             <p className="mt-2 break-all text-xs text-zinc-400">
@@ -36,7 +36,7 @@ export function YouTubeInput({
             disabled={disabled}
             className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Start Daily Stream
+            Start Stream
           </button>
         ) : (
           <button

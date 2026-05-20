@@ -329,7 +329,7 @@ export default function Home() {
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Live Stream Chyron Pipeline</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Start the current daily Newsmax HLS stream and generate broadcast chyron suggestions every 8 seconds.
+            Start the live HLS stream and generate broadcast chyron suggestions every 8 seconds.
           </p>
         </header>
 
