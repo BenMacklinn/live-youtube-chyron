@@ -322,6 +322,8 @@ async function maybeGenerateChyrons(
       type: "chyron.suggestions",
       batchId: session.latest_batch_id ?? batchId,
       sessionSummary: nextSessionSummary,
+      topic: "",
+      entities: [],
       chyronOptions: [],
       verbatimCaption,
       recentSummary,
@@ -368,6 +370,8 @@ async function maybeGenerateChyrons(
     type: "chyron.suggestions",
     batchId,
     sessionSummary: nextSessionSummary,
+    topic: "",
+    entities: [],
     chyronOptions: optionRows.map((option) => ({
       id: option.id,
       text: option.text,

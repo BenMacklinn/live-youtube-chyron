@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { GenerationModeToggle } from "@/components/GenerationModeToggle";
-import { ModeToggle } from "@/components/ModeToggle";
 import { UsagePanel } from "@/components/UsagePanel";
 import { ProducerGuidance, type GuestContextDraft } from "@/components/ProducerGuidance";
 import { YouTubeInput } from "@/components/YouTubeInput";
@@ -16,14 +15,11 @@ import {
   rejectChyron,
   setGuestContext,
   setChyronGenerationMode,
-  setSessionMode,
   stopSession,
   type ApprovedLogEntry,
   type ChyronGenerationMode,
   type ChyronSuggestions as ChyronSuggestionsType,
   type LiveMessage,
-  type SessionMode,
-  type StreamSourcePreset,
   type UsageStats,
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -39,13 +35,10 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<SessionMode>("chyron");
   const [generationMode, setGenerationMode] = useState<ChyronGenerationMode>("timeline");
-  const [streamSource, setStreamSource] = useState<StreamSourcePreset>("production");
   const [segments, setSegments] = useState<string[]>([]);
   const [partial, setPartial] = useState("");
   const [suggestions, setSuggestions] = useState<ChyronSuggestionsType | null>(null);
-  const [verbatimCaption, setVerbatimCaption] = useState("");
   const [activeChyron, setActiveChyron] = useState("");
   const [approvedLog, setApprovedLog] = useState<ApprovedLogEntry[]>([]);
   const [usage, setUsage] = useState<UsageStats | null>(null);
@@ -73,30 +66,28 @@ export default function Home() {
         setSegments((s) => [...s, msg.text]);
         setPartial("");
         break;
-      case "chyron.suggestions":
+      case "chyron.suggestions": {
+        const chyronOptions = msg.chyronOptions ?? [];
+        const entities = msg.entities ?? [];
         setContextNotice("");
         setSuggestions((prev) => ({
-          batchId: msg.chyronOptions.length > 0 ? msg.batchId : (prev?.batchId ?? msg.batchId),
+          batchId: chyronOptions.length > 0 ? msg.batchId : (prev?.batchId ?? msg.batchId),
           sessionSummary: msg.sessionSummary || prev?.sessionSummary || "",
           topic: msg.topic || prev?.topic || "",
-          entities: msg.entities.length > 0 ? msg.entities : (prev?.entities ?? []),
-          chyronOptions: msg.chyronOptions.length > 0 ? msg.chyronOptions : (prev?.chyronOptions ?? []),
-          verbatimCaption: msg.verbatimCaption || prev?.verbatimCaption || "",
+          entities: entities.length > 0 ? entities : (prev?.entities ?? []),
+          chyronOptions: chyronOptions.length > 0 ? chyronOptions : (prev?.chyronOptions ?? []),
           recentSummary: msg.recentSummary || prev?.recentSummary || "",
         }));
-        setVerbatimCaption(msg.verbatimCaption);
         setNextChyronBatchAt(
           msg.nextBatchAt ?? Date.now() / 1000 + (msg.chyronCadenceSec ?? 8),
         );
         break;
+      }
       case "chyron.approved":
         setActiveChyron(msg.text);
         break;
       case "chyron.log":
         setApprovedLog((log) => [...log, { text: msg.text, timestamp: msg.timestamp }]);
-        break;
-      case "mode.changed":
-        setMode(msg.mode);
         break;
       case "generation_mode.changed":
         setGenerationMode(msg.generationMode);
@@ -121,7 +112,6 @@ export default function Home() {
         setSegments([]);
         setPartial("");
         setSuggestions(null);
-        setVerbatimCaption("");
         setNextChyronBatchAt(null);
         setContextNotice("Context cleared. The next chyron batch will start fresh.");
         break;
@@ -144,13 +134,11 @@ export default function Home() {
       .then((snapshot) => {
         if (cancelled) return;
         setStatus(snapshot.status);
-        setMode(snapshot.mode);
         setGenerationMode(snapshot.generationMode);
         setUrl(snapshot.youtubeUrl);
         setSegments(snapshot.segments);
         setPartial("");
         setSuggestions(snapshot.latestSuggestions);
-        setVerbatimCaption(snapshot.latestVerbatim);
         setActiveChyron(snapshot.activeChyron);
         setApprovedLog(snapshot.approvedLog);
         setUsage(snapshot.usage);
@@ -202,7 +190,6 @@ export default function Home() {
     setSuggestions(null);
     setActiveChyron("");
     setApprovedLog([]);
-    setVerbatimCaption("");
     setUsage(null);
     setContextNotice("");
     setNextChyronBatchAt(null);
@@ -210,7 +197,7 @@ export default function Home() {
     setGuestDraft(emptyGuestContext());
 
     try {
-      const { sessionId: id } = await createSession("", mode, undefined, 0, generationMode, streamSource);
+      const { sessionId: id } = await createSession("", undefined, 0, generationMode);
       setSessionId(id);
       setStatus("connecting");
     } catch (e) {
@@ -229,16 +216,6 @@ export default function Home() {
       }
     }
     setStatus("ended");
-  };
-
-  const handleModeChange = async (next: SessionMode) => {
-    setMode(next);
-    if (!sessionId) return;
-    try {
-      await setSessionMode(sessionId, next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to set mode");
-    }
   };
 
   const handleGenerationModeChange = async (next: ChyronGenerationMode) => {
@@ -291,7 +268,6 @@ export default function Home() {
     setSegments([]);
     setPartial("");
     setSuggestions(null);
-    setVerbatimCaption("");
     setNextChyronBatchAt(null);
   }, []);
 
@@ -336,8 +312,6 @@ export default function Home() {
         </header>
 
         <YouTubeInput
-          streamSource={streamSource}
-          onStreamSourceChange={setStreamSource}
           sourceUrl={url}
           onStart={handleStart}
           onStop={handleStop}
@@ -352,7 +326,6 @@ export default function Home() {
               onChange={handleGenerationModeChange}
               disabled={starting}
             />
-            <ModeToggle mode={mode} onChange={handleModeChange} disabled={!sessionId} />
             <button
               type="button"
               onClick={() => void handleClearContext()}
@@ -413,12 +386,7 @@ export default function Home() {
           nextBatchAt={nextChyronBatchAt}
         />
 
-        <ApprovedTextOutput
-          activeChyron={activeChyron}
-          log={approvedLog}
-          verbatimCaption={verbatimCaption}
-          mode={mode}
-        />
+        <ApprovedTextOutput activeChyron={activeChyron} log={approvedLog} />
       </main>
     </div>
   );

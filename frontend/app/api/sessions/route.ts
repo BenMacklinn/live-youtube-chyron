@@ -11,8 +11,7 @@ export const maxDuration = 30;
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const youtubeUrl = String(body.youtubeUrl ?? "").trim();
-  const streamSource = body.streamSource === "test" ? "test" : "production";
-  const mode = body.mode === "verbatim" ? "verbatim" : "chyron";
+  const mode = "chyron";
   const generationMode = body.generationMode === "guest" ? "guest" : "timeline";
   const startSec = Math.max(0, Number(body.startSec ?? 0) || 0);
   const contextWindowSec = clamp(Number(body.contextWindowSec ?? liveConfig.contextWindowSec) || liveConfig.contextWindowSec, 30, 90);
@@ -22,7 +21,7 @@ export async function POST(request: NextRequest) {
   }
   let streamUrl: string;
   try {
-    streamUrl = await resolveSessionStreamInputUrl(youtubeUrl, streamSource);
+    streamUrl = await resolveSessionStreamInputUrl(youtubeUrl);
   } catch (error) {
     return NextResponse.json({ detail: error instanceof Error ? error.message : "Invalid stream URL" }, { status: 400 });
   }

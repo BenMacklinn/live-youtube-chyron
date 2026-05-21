@@ -1,11 +1,7 @@
 import "server-only";
 
-import type { StreamSourcePreset } from "@/lib/stream-sources";
-
 const DIRECT_STREAM_PROTOCOLS = new Set(["http:", "https:", "rtmp:", "rtmps:"]);
 const PRODUCTION_STREAM_RESOLVER = "https://newsmax-delta.vercel.app/api/latest-clipper";
-const TEST_STREAM_URL =
-  "https://d35dy04pnq6mdl.cloudfront.net/1/20260519T224132Z/index.m3u8";
 
 export type StreamSourceKind = "hls" | "direct";
 
@@ -32,18 +28,10 @@ export function resolveStreamInputUrl(sourceUrl: string): string {
   return trimmed;
 }
 
-export async function resolveSessionStreamInputUrl(
-  sourceUrl: string,
-  preset: StreamSourcePreset = "production",
-): Promise<string> {
+export async function resolveSessionStreamInputUrl(sourceUrl: string): Promise<string> {
   const trimmed = sourceUrl.trim();
   if (trimmed) {
     return resolveStreamInputUrl(trimmed);
-  }
-
-  if (preset === "test") {
-    const testUrl = process.env.TEST_STREAM_SOURCE_URL?.trim() || TEST_STREAM_URL;
-    return resolveStreamInputUrl(testUrl);
   }
 
   return resolveStreamInputUrl(await loadProductionStreamInputUrl());

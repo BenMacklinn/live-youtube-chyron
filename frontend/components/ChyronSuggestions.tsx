@@ -104,7 +104,7 @@ export function ChyronSuggestions({
         {suggestions.topic && (
           <p className="mt-1 text-xs text-zinc-500">
             Topic: {suggestions.topic}
-            {suggestions.entities.length > 0 && ` · ${suggestions.entities.join(", ")}`}
+            {(suggestions.entities?.length ?? 0) > 0 && ` · ${suggestions.entities.join(", ")}`}
           </p>
         )}
         {suggestions.sessionSummary && (
@@ -115,7 +115,7 @@ export function ChyronSuggestions({
         )}
       </header>
       <div className="space-y-3 p-4">
-        {suggestions.chyronOptions.length === 0 ? (
+        {(suggestions.chyronOptions?.length ?? 0) === 0 ? (
           <p className="text-sm text-zinc-400">
             No chyrons in this batch — summary updated, retrying on the next cadence…
           </p>

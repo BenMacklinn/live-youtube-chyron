@@ -5,15 +5,13 @@ import type { ApprovedLogEntry } from "@/lib/api";
 type Props = {
   activeChyron: string;
   log: ApprovedLogEntry[];
-  verbatimCaption: string;
-  mode: "chyron" | "verbatim";
 };
 
 function formatTime(ts: number) {
   return new Date(ts * 1000).toLocaleTimeString();
 }
 
-export function ApprovedTextOutput({ activeChyron, log, verbatimCaption, mode }: Props) {
+export function ApprovedTextOutput({ activeChyron, log }: Props) {
   const fullLog = log.map((e) => `[${formatTime(e.timestamp)}] ${e.text}`).join("\n");
 
   const copy = async (text: string) => {
@@ -61,21 +59,11 @@ export function ApprovedTextOutput({ activeChyron, log, verbatimCaption, mode }:
           </button>
         </div>
       </header>
-      <div className="grid gap-4 p-4 md:grid-cols-2">
-        <div>
-          <p className="mb-1 text-xs font-medium uppercase text-zinc-500">Active Chyron</p>
-          <p className="min-h-[3rem] font-mono text-base font-bold tracking-wide">
-            {activeChyron || "—"}
-          </p>
-        </div>
-        {mode === "verbatim" && (
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase text-zinc-500">Verbatim Caption</p>
-            <p className="min-h-[3rem] text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
-              {verbatimCaption || "—"}
-            </p>
-          </div>
-        )}
+      <div className="p-4">
+        <p className="mb-1 text-xs font-medium uppercase text-zinc-500">Active Chyron</p>
+        <p className="min-h-[3rem] font-mono text-base font-bold tracking-wide">
+          {activeChyron || "—"}
+        </p>
       </div>
       <div className="border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <p className="mb-2 text-xs font-medium uppercase text-zinc-500">Session Log</p>

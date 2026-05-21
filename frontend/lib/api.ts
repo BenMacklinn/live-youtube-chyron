@@ -1,8 +1,5 @@
 export type SessionMode = "chyron" | "verbatim";
 export type ChyronGenerationMode = "guest" | "timeline";
-export type { StreamSourcePreset } from "@/lib/stream-sources";
-
-import type { StreamSourcePreset } from "@/lib/stream-sources";
 
 export type ChyronOption = {
   id: string;
@@ -101,22 +98,18 @@ export function parseStartTime(value: string): number {
 
 export async function createSession(
   youtubeUrl: string,
-  mode: SessionMode,
   contextWindowSec?: number,
   startSec?: number,
   generationMode: ChyronGenerationMode = "timeline",
-  streamSource: StreamSourcePreset = "production",
 ) {
   const res = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       youtubeUrl,
-      mode,
       contextWindowSec,
       startSec: startSec ?? 0,
       generationMode,
-      streamSource,
     }),
   });
   if (!res.ok) {
