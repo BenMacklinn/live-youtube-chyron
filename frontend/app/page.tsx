@@ -76,6 +76,7 @@ export default function Home() {
           topic: msg.topic || prev?.topic || "",
           entities: entities.length > 0 ? entities : (prev?.entities ?? []),
           chyronOptions: chyronOptions.length > 0 ? chyronOptions : (prev?.chyronOptions ?? []),
+          verbatimCaption: msg.verbatimCaption || prev?.verbatimCaption || "",
           recentSummary: msg.recentSummary || prev?.recentSummary || "",
         }));
         setNextChyronBatchAt(
