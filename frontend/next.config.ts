@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  outputFileTracingIncludes: {
-    "/api/sessions/[sessionId]/process": ["./node_modules/ffmpeg-static/**/*"],
-  },
+  // Bundle the ffmpeg binary via package tracing, not vercel.json includeFiles.
+  serverExternalPackages: ["ffmpeg-static"],
 };
 
 export default nextConfig;
