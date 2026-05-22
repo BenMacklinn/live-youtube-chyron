@@ -4,7 +4,6 @@ import { kickOffProcessing } from "@/lib/live/kickoff";
 import { processSessionRun } from "@/lib/live/processor";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
 
 type Params = {
   params: Promise<{ sessionId: string }>;

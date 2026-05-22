@@ -6,7 +6,6 @@ import { kickOffProcessing } from "@/lib/live/kickoff";
 import { MICROPHONE_SOURCE_URL, resolveSessionStreamInputUrl } from "@/lib/live/stream-source";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));

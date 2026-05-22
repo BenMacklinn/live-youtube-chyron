@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { processUploadedAudioChunk } from "@/lib/live/processor";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
 
 type Params = {
   params: Promise<{ sessionId: string }>;
