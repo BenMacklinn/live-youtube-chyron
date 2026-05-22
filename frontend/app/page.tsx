@@ -27,7 +27,7 @@ import {
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
-const MIC_CHUNK_MS = 3_000;
+const MIC_CHUNK_MS = 2_500;
 
 function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
   return a.name.trim() === b.name.trim() && a.company.trim() === b.company.trim();
