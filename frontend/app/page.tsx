@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { GenerationModeToggle } from "@/components/GenerationModeToggle";
@@ -16,7 +16,9 @@ import {
   setGuestContext,
   setChyronGenerationMode,
   stopSession,
+  uploadMicrophoneChunk,
   type ApprovedLogEntry,
+  type AudioSourceMode,
   type ChyronGenerationMode,
   type ChyronSuggestions as ChyronSuggestionsType,
   type LiveMessage,
@@ -25,6 +27,7 @@ import {
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
+const MIC_CHUNK_MS = 6_000;
 
 function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
   return a.name.trim() === b.name.trim() && a.company.trim() === b.company.trim();
@@ -32,6 +35,7 @@ function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
 
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [sourceMode, setSourceMode] = useState<AudioSourceMode>("stream");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +53,11 @@ export default function Home() {
   const [guestContext, setGuestContextState] = useState<GuestContextDraft>(emptyGuestContext);
   const [guestDraft, setGuestDraft] = useState<GuestContextDraft>(emptyGuestContext);
   const [guestSaving, setGuestSaving] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const microphoneQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const microphoneCaptureActiveRef = useRef(false);
+  const recordMicrophoneSliceRef = useRef<(sessionId: string, stream: MediaStream, mimeType: string) => void>(() => {});
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
 
   const isRunning = status === "connecting" || status === "transcribing";
@@ -183,6 +192,86 @@ export default function Home() {
     };
   }, [sessionId, handleMessage, supabase]);
 
+  const stopMicrophoneCapture = useCallback(() => {
+    microphoneCaptureActiveRef.current = false;
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    }
+    mediaRecorderRef.current = null;
+
+    const stream = microphoneStreamRef.current;
+    stream?.getTracks().forEach((track) => track.stop());
+    microphoneStreamRef.current = null;
+  }, []);
+
+  useEffect(() => () => stopMicrophoneCapture(), [stopMicrophoneCapture]);
+
+  const recordMicrophoneSlice = useCallback((sessionId: string, stream: MediaStream, mimeType: string) => {
+    if (!microphoneCaptureActiveRef.current || stream.getTracks().every((track) => track.readyState === "ended")) {
+      return;
+    }
+
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks: Blob[] = [];
+    const startedAt = Date.now();
+    mediaRecorderRef.current = recorder;
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onerror = () => setError("Microphone recorder failed.");
+    recorder.onstop = () => {
+      if (!microphoneCaptureActiveRef.current || chunks.length === 0) return;
+      const audio = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+      const durationSec = Math.max(1, (Date.now() - startedAt) / 1000);
+      microphoneQueueRef.current = microphoneQueueRef.current
+        .catch(() => undefined)
+        .then(() => uploadMicrophoneChunk(sessionId, audio, durationSec))
+        .catch((e) => {
+          setError(e instanceof Error ? e.message : "Failed to process microphone audio");
+        })
+        .finally(() => {
+          if (microphoneCaptureActiveRef.current) {
+            recordMicrophoneSliceRef.current(sessionId, stream, mimeType);
+          }
+        });
+    };
+
+    recorder.start();
+    window.setTimeout(() => {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    }, MIC_CHUNK_MS);
+  }, []);
+
+  useEffect(() => {
+    recordMicrophoneSliceRef.current = recordMicrophoneSlice;
+  }, [recordMicrophoneSlice]);
+
+  const startMicrophoneCapture = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Microphone capture is not available in this browser.");
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    microphoneStreamRef.current = stream;
+
+    const { sessionId: id } = await createSession("", undefined, 0, generationMode, "microphone");
+    setSessionId(id);
+    setStatus("connecting");
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "";
+    microphoneCaptureActiveRef.current = true;
+    microphoneQueueRef.current = Promise.resolve();
+    recordMicrophoneSlice(id, stream, mimeType);
+  }, [generationMode, recordMicrophoneSlice]);
+
   const handleStart = async () => {
     setStarting(true);
     setError(null);
@@ -198,10 +287,15 @@ export default function Home() {
     setGuestDraft(emptyGuestContext());
 
     try {
-      const { sessionId: id } = await createSession("", undefined, 0, generationMode);
-      setSessionId(id);
-      setStatus("connecting");
+      if (sourceMode === "microphone") {
+        await startMicrophoneCapture();
+      } else {
+        const { sessionId: id } = await createSession("", undefined, 0, generationMode, "stream");
+        setSessionId(id);
+        setStatus("connecting");
+      }
     } catch (e) {
+      stopMicrophoneCapture();
       setError(e instanceof Error ? e.message : "Failed to start");
     } finally {
       setStarting(false);
@@ -209,6 +303,7 @@ export default function Home() {
   };
 
   const handleStop = async () => {
+    stopMicrophoneCapture();
     if (sessionId) {
       try {
         await stopSession(sessionId);
@@ -308,12 +403,14 @@ export default function Home() {
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Live Stream Chyron Pipeline</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Start the live HLS stream and generate broadcast chyron suggestions every 8 seconds.
+            Start live HLS or microphone input and generate broadcast chyron suggestions every 8 seconds.
           </p>
         </header>
 
         <YouTubeInput
           sourceUrl={url}
+          sourceMode={sourceMode}
+          onSourceModeChange={setSourceMode}
           onStart={handleStart}
           onStop={handleStop}
           isRunning={isRunning}

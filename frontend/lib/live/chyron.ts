@@ -106,7 +106,7 @@ export type ChyronOptionRow = {
   rationale: string;
 };
 
-export function shouldGenerateChyrons(_session: LiveSessionRow) {
+export function shouldGenerateChyrons() {
   return true;
 }
 

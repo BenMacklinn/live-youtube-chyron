@@ -3,7 +3,7 @@ import { createServiceSupabaseClient } from "@/lib/supabase/server";
 import { liveConfig } from "@/lib/live/config";
 import { publishSessionEvent } from "@/lib/live/events";
 import { kickOffProcessing } from "@/lib/live/kickoff";
-import { resolveSessionStreamInputUrl } from "@/lib/live/stream-source";
+import { MICROPHONE_SOURCE_URL, resolveSessionStreamInputUrl } from "@/lib/live/stream-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -11,6 +11,7 @@ export const maxDuration = 30;
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const youtubeUrl = String(body.youtubeUrl ?? "").trim();
+  const sourceMode = body.sourceMode === "microphone" ? "microphone" : "stream";
   const mode = "chyron";
   const generationMode = body.generationMode === "guest" ? "guest" : "timeline";
   const startSec = Math.max(0, Number(body.startSec ?? 0) || 0);
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
   }
   let streamUrl: string;
   try {
-    streamUrl = await resolveSessionStreamInputUrl(youtubeUrl);
+    streamUrl = sourceMode === "microphone" ? MICROPHONE_SOURCE_URL : await resolveSessionStreamInputUrl(youtubeUrl);
   } catch (error) {
     return NextResponse.json({ detail: error instanceof Error ? error.message : "Invalid stream URL" }, { status: 400 });
   }
@@ -51,14 +52,16 @@ export async function POST(request: NextRequest) {
     error: session.error,
   });
 
-  const origin = new URL(request.url).origin;
-  after(async () => {
-    try {
-      await kickOffProcessing(origin, session.id);
-    } catch (error) {
-      console.error("Failed to start processing", error);
-    }
-  });
+  if (sourceMode === "stream") {
+    const origin = new URL(request.url).origin;
+    after(async () => {
+      try {
+        await kickOffProcessing(origin, session.id);
+      } catch (error) {
+        console.error("Failed to start processing", error);
+      }
+    });
+  }
 
   return NextResponse.json({ sessionId: session.id });
 }

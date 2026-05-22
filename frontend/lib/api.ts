@@ -1,5 +1,6 @@
 export type SessionMode = "chyron" | "verbatim";
 export type ChyronGenerationMode = "guest" | "timeline";
+export type AudioSourceMode = "stream" | "microphone";
 
 export type ChyronOption = {
   id: string;
@@ -101,6 +102,7 @@ export async function createSession(
   contextWindowSec?: number,
   startSec?: number,
   generationMode: ChyronGenerationMode = "timeline",
+  sourceMode: AudioSourceMode = "stream",
 ) {
   const res = await fetch("/api/sessions", {
     method: "POST",
@@ -110,6 +112,7 @@ export async function createSession(
       contextWindowSec,
       startSec: startSec ?? 0,
       generationMode,
+      sourceMode,
     }),
   });
   if (!res.ok) {
@@ -117,6 +120,21 @@ export async function createSession(
     throw new Error(err.detail || "Failed to create session");
   }
   return res.json() as Promise<{ sessionId: string }>;
+}
+
+export async function uploadMicrophoneChunk(sessionId: string, audio: Blob, durationSec: number) {
+  const res = await fetch(`/api/sessions/${sessionId}/microphone`, {
+    method: "POST",
+    headers: {
+      "Content-Type": audio.type || "audio/webm",
+      "X-Duration-Sec": String(durationSec),
+    },
+    body: audio,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to process microphone audio");
+  }
 }
 
 export async function stopSession(sessionId: string) {

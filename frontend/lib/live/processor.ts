@@ -9,7 +9,7 @@ import { liveConfig } from "./config";
 import { publishSessionEvent } from "./events";
 import { getFfmpegBinaryPath } from "./ffmpeg-binary";
 import { loadHlsPlaylist, type HlsSegment } from "./hls-playlist";
-import { resolveStreamInputUrl, streamSourceKind, type StreamSourceKind } from "./stream-source";
+import { isMicrophoneSourceUrl, resolveStreamInputUrl, streamSourceKind, type StreamSourceKind } from "./stream-source";
 import {
   buildChyronOptionRows,
   buildChyronPrompt,
@@ -37,15 +37,18 @@ type ChunkResult = {
 
 export async function processSessionRun(sessionId: string): Promise<ProcessResult> {
   const supabase = createServiceSupabaseClient();
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is required");
   }
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   try {
     const firstSession = await loadSessionForProcessing(supabase, sessionId);
     if (!firstSession || firstSession.status === "ended" || firstSession.status === "error") {
+      return { shouldContinue: false };
+    }
+    if (isMicrophoneSourceUrl(firstSession.youtube_url)) {
       return { shouldContinue: false };
     }
 
@@ -76,6 +79,42 @@ export async function processSessionRun(sessionId: string): Promise<ProcessResul
     });
     return { shouldContinue: false };
   }
+}
+
+export async function processUploadedAudioChunk(
+  sessionId: string,
+  audio: Buffer,
+  contentType: string,
+  durationSec: number,
+) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is required");
+  }
+
+  const supabase = createServiceSupabaseClient();
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const session = await loadSessionForProcessing(supabase, sessionId);
+  if (!session || session.status === "ended" || session.status === "error") {
+    return { status: "ignored" };
+  }
+  if (!isMicrophoneSourceUrl(session.youtube_url)) {
+    throw new Error("Session is not configured for microphone input");
+  }
+
+  await ensureTranscribing(supabase, session);
+
+  const offsetSec = Number(session.next_offset_sec || 0);
+  const safeDurationSec = Math.max(1, Math.min(30, durationSec || liveConfig.transcriptionChunkSec));
+  const transcriptText = await transcribeUploadedChunk(openai, audio, contentType, session.id);
+  const deduped = dedupeOverlap(session.last_transcript_text, transcriptText);
+  const sessionPatch: Partial<LiveSessionRow> = {
+    next_offset_sec: offsetSec + safeDurationSec,
+    audio_bytes_sent: Number(session.audio_bytes_sent ?? 0) + audioBytesForSeconds(safeDurationSec),
+    last_transcript_text: transcriptText.trim(),
+  };
+
+  await commitTranscriptChunk(supabase, openai, session, sessionPatch, deduped, offsetSec);
+  return { status: "processed", text: deduped };
 }
 
 async function processOneChunk(
@@ -279,7 +318,7 @@ async function maybeGenerateChyrons(
 
   const recentTranscript = tailChars((segments ?? []).map((segment) => segment.text).join(" "), liveConfig.contextRecentTranscriptMaxChars);
   if (!recentTranscript.trim()) return;
-  if (!shouldGenerateChyrons(session)) return;
+  if (!shouldGenerateChyrons()) return;
 
   const approved = (memory ?? []).filter((entry) => entry.action === "approved").map((entry) => entry.text).slice(0, 8);
   const rejected = (memory ?? []).filter((entry) => entry.action === "rejected").map((entry) => entry.text).slice(0, 5);
@@ -390,6 +429,20 @@ async function maybeGenerateChyrons(
 
 async function transcribeChunk(openai: OpenAI, wav: Buffer, sessionId: string) {
   const file = await toFile(wav, `${sessionId}-${Date.now()}.wav`, { type: "audio/wav" });
+  const transcript = await openai.audio.transcriptions.create({
+    model: liveConfig.transcriptionModel,
+    file,
+    response_format: "json",
+  });
+
+  return String(transcript.text ?? "").trim();
+}
+
+async function transcribeUploadedChunk(openai: OpenAI, audio: Buffer, contentType: string, sessionId: string) {
+  const extension = contentType.includes("ogg") ? "ogg" : contentType.includes("mp4") ? "mp4" : "webm";
+  const file = await toFile(audio, `${sessionId}-${Date.now()}.${extension}`, {
+    type: contentType || "audio/webm",
+  });
   const transcript = await openai.audio.transcriptions.create({
     model: liveConfig.transcriptionModel,
     file,

@@ -2,6 +2,7 @@ import "server-only";
 
 const DIRECT_STREAM_PROTOCOLS = new Set(["http:", "https:", "rtmp:", "rtmps:"]);
 const PRODUCTION_STREAM_RESOLVER = "https://newsmax-delta.vercel.app/api/latest-clipper";
+export const MICROPHONE_SOURCE_URL = "microphone://local";
 
 export type StreamSourceKind = "hls" | "direct";
 
@@ -16,6 +17,10 @@ export function isSupportedStreamSource(value: string): boolean {
 
 export function resolveStreamInputUrl(sourceUrl: string): string {
   const trimmed = sourceUrl.trim();
+  if (isMicrophoneSourceUrl(trimmed)) {
+    return trimmed;
+  }
+
   if (!isSupportedStreamSource(trimmed)) {
     throw new Error("Use a direct stream URL: rtmp://, rtmps://, https://...m3u8, or a direct media file URL.");
   }
@@ -44,6 +49,10 @@ export function streamSourceKind(sourceUrl: string): StreamSourceKind {
   } catch {
     return "direct";
   }
+}
+
+export function isMicrophoneSourceUrl(sourceUrl: string): boolean {
+  return sourceUrl.trim() === MICROPHONE_SOURCE_URL;
 }
 
 async function loadProductionStreamInputUrl(): Promise<string> {
