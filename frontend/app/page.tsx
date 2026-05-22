@@ -27,7 +27,7 @@ import {
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
-const MIC_CHUNK_MS = 6_000;
+const MIC_CHUNK_MS = 3_000;
 
 function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
   return a.name.trim() === b.name.trim() && a.company.trim() === b.company.trim();
@@ -222,7 +222,10 @@ export default function Home() {
     };
     recorder.onerror = () => setError("Microphone recorder failed.");
     recorder.onstop = () => {
-      if (!microphoneCaptureActiveRef.current || chunks.length === 0) return;
+      if (!microphoneCaptureActiveRef.current) return;
+      recordMicrophoneSliceRef.current(sessionId, stream, mimeType);
+      if (chunks.length === 0) return;
+
       const audio = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
       const durationSec = Math.max(1, (Date.now() - startedAt) / 1000);
       microphoneQueueRef.current = microphoneQueueRef.current
@@ -230,11 +233,6 @@ export default function Home() {
         .then(() => uploadMicrophoneChunk(sessionId, audio, durationSec))
         .catch((e) => {
           setError(e instanceof Error ? e.message : "Failed to process microphone audio");
-        })
-        .finally(() => {
-          if (microphoneCaptureActiveRef.current) {
-            recordMicrophoneSliceRef.current(sessionId, stream, mimeType);
-          }
         });
     };
 
