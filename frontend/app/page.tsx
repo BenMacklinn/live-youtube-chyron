@@ -25,6 +25,7 @@ import {
   type UsageStats,
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { useAudioInputDevices } from "@/lib/use-audio-input-devices";
 
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
 const MIC_CHUNK_MS = 2_500;
@@ -59,6 +60,14 @@ export default function Home() {
   const microphoneCaptureActiveRef = useRef(false);
   const recordMicrophoneSliceRef = useRef<(sessionId: string, stream: MediaStream, mimeType: string) => void>(() => {});
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const {
+    devices: micDevices,
+    selectedDeviceId: selectedMicDeviceId,
+    setSelectedDeviceId: setSelectedMicDeviceId,
+    isLoading: micDevicesLoading,
+    error: micDevicesError,
+    refresh: refreshMicDevices,
+  } = useAudioInputDevices(sourceMode === "microphone");
 
   const isRunning = status === "connecting" || status === "transcribing";
 
@@ -248,12 +257,14 @@ export default function Home() {
     recordMicrophoneSliceRef.current = recordMicrophoneSlice;
   }, [recordMicrophoneSlice]);
 
-  const startMicrophoneCapture = useCallback(async () => {
+  const startMicrophoneCapture = useCallback(async (deviceId: string) => {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Microphone capture is not available in this browser.");
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: deviceId } },
+    });
     microphoneStreamRef.current = stream;
 
     const { sessionId: id } = await createSession("", undefined, 0, generationMode, "microphone");
@@ -286,7 +297,10 @@ export default function Home() {
 
     try {
       if (sourceMode === "microphone") {
-        await startMicrophoneCapture();
+        if (!selectedMicDeviceId) {
+          throw new Error("Select a microphone input device before starting.");
+        }
+        await startMicrophoneCapture(selectedMicDeviceId);
       } else {
         const { sessionId: id } = await createSession("", undefined, 0, generationMode, "stream");
         setSessionId(id);
@@ -409,6 +423,12 @@ export default function Home() {
           sourceUrl={url}
           sourceMode={sourceMode}
           onSourceModeChange={setSourceMode}
+          micDevices={micDevices}
+          selectedMicDeviceId={selectedMicDeviceId}
+          onMicDeviceChange={setSelectedMicDeviceId}
+          micDevicesLoading={micDevicesLoading}
+          micDevicesError={micDevicesError}
+          onRefreshMicDevices={() => void refreshMicDevices()}
           onStart={handleStart}
           onStop={handleStop}
           isRunning={isRunning}
