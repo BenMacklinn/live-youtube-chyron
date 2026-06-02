@@ -7,6 +7,8 @@ type Props = {
   suggestions: ChyronSuggestions | null;
   onApprove: (id: string, text: string) => void;
   onReject: (id: string, text: string) => void;
+  onGenerateNow?: () => void | Promise<void>;
+  generating?: boolean;
   disabled?: boolean;
   isRunning?: boolean;
   nextBatchAt?: number | null;
@@ -41,10 +43,16 @@ function ChyronCountdown({
   isRunning,
   hasSuggestions,
   secondsUntilNext,
+  onGenerateNow,
+  generating,
+  disabled,
 }: {
   isRunning: boolean;
   hasSuggestions: boolean;
   secondsUntilNext: number | null;
+  onGenerateNow?: () => void | Promise<void>;
+  generating?: boolean;
+  disabled?: boolean;
 }) {
   if (!isRunning) return null;
 
@@ -55,7 +63,19 @@ function ChyronCountdown({
 
   return (
     <footer className="shrink-0 border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
-      <p className="text-center text-xs font-medium tabular-nums text-zinc-500">{label}</p>
+      <div className="flex items-center gap-3">
+        {onGenerateNow ? (
+          <button
+            type="button"
+            disabled={disabled || generating}
+            onClick={() => void onGenerateNow()}
+            className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            {generating ? "Generating…" : "Generate now"}
+          </button>
+        ) : null}
+        <p className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-500">{label}</p>
+      </div>
     </footer>
   );
 }
@@ -64,6 +84,8 @@ export function ChyronSuggestions({
   suggestions,
   onApprove,
   onReject,
+  onGenerateNow,
+  generating = false,
   disabled,
   isRunning = false,
   nextBatchAt = null,
@@ -81,7 +103,14 @@ export function ChyronSuggestions({
         <div className="flex flex-1 items-center justify-center p-4 text-sm text-zinc-400">
           Waiting for first batch…
         </div>
-        <ChyronCountdown isRunning={isRunning} hasSuggestions={false} secondsUntilNext={secondsUntilNext} />
+        <ChyronCountdown
+          isRunning={isRunning}
+          hasSuggestions={false}
+          secondsUntilNext={secondsUntilNext}
+          onGenerateNow={onGenerateNow}
+          generating={generating}
+          disabled={disabled}
+        />
       </section>
     );
   }
@@ -183,7 +212,14 @@ export function ChyronSuggestions({
         ))
         )}
       </div>
-      <ChyronCountdown isRunning={isRunning} hasSuggestions secondsUntilNext={secondsUntilNext} />
+      <ChyronCountdown
+        isRunning={isRunning}
+        hasSuggestions
+        secondsUntilNext={secondsUntilNext}
+        onGenerateNow={onGenerateNow}
+        generating={generating}
+        disabled={disabled}
+      />
     </section>
   );
 }

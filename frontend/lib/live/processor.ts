@@ -270,20 +270,47 @@ async function commitTranscriptChunk(
   }
 }
 
+type GenerateChyronsOptions = {
+  force?: boolean;
+};
+
+type GenerateChyronsResult = {
+  generated: boolean;
+  reason?: "no_session" | "no_transcript" | "context_changed";
+  nextBatchAt?: number;
+};
+
+export async function forceGenerateChyrons(sessionId: string): Promise<GenerateChyronsResult> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is required");
+  }
+
+  const supabase = createServiceSupabaseClient();
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const session = await loadSessionForProcessing(supabase, sessionId);
+  if (!session || session.status === "ended" || session.status === "error") {
+    return { generated: false, reason: "no_session" };
+  }
+
+  return maybeGenerateChyrons(supabase, openai, session, { force: true });
+}
+
 async function maybeGenerateChyrons(
   supabase: SupabaseClient<Database>,
   openai: OpenAI,
   session: LiveSessionRow,
-) {
+  options?: GenerateChyronsOptions,
+): Promise<GenerateChyronsResult> {
   const freshSession = await loadSessionForProcessing(supabase, session.id);
-  if (!freshSession) return;
+  if (!freshSession) return { generated: false, reason: "no_session" };
   session = freshSession;
 
-  if (session.context_version <= session.last_generation_version) return;
-
-  if (session.last_generation_at) {
-    const elapsedMs = Date.now() - Date.parse(session.last_generation_at);
-    if (elapsedMs < liveConfig.chyronCadenceSec * 1000) return;
+  if (!options?.force) {
+    if (session.context_version <= session.last_generation_version) return { generated: false };
+    if (session.last_generation_at) {
+      const elapsedMs = Date.now() - Date.parse(session.last_generation_at);
+      if (elapsedMs < liveConfig.chyronCadenceSec * 1000) return { generated: false };
+    }
   }
 
   const generationContextVersion = session.context_version;
@@ -317,8 +344,8 @@ async function maybeGenerateChyrons(
   if (memoryError) throw new Error(memoryError.message);
 
   const recentTranscript = tailChars((segments ?? []).map((segment) => segment.text).join(" "), liveConfig.contextRecentTranscriptMaxChars);
-  if (!recentTranscript.trim()) return;
-  if (!shouldGenerateChyrons()) return;
+  if (!recentTranscript.trim()) return { generated: false, reason: "no_transcript" };
+  if (!shouldGenerateChyrons()) return { generated: false };
 
   const approved = (memory ?? []).filter((entry) => entry.action === "approved").map((entry) => entry.text).slice(0, 8);
   const rejected = (memory ?? []).filter((entry) => entry.action === "rejected").map((entry) => entry.text).slice(0, 5);
@@ -334,15 +361,18 @@ async function maybeGenerateChyrons(
   });
 
   const afterGeneration = await loadSessionForProcessing(supabase, session.id);
-  if (!afterGeneration || afterGeneration.context_version !== generationContextVersion) {
-    return;
+  if (!afterGeneration) return { generated: false, reason: "no_session" };
+  if (!options?.force && afterGeneration.context_version !== generationContextVersion) {
+    return { generated: false, reason: "context_changed" };
   }
   session = afterGeneration;
 
   const parsed = parseChyronResponse(response.choices[0].message.content || "{}");
   const { sessionSummary, recentSummary, verbatimCaption } = trimChyronFields(parsed);
   const batchId = crypto.randomUUID();
-  const nextBatchAt = new Date(Date.now() + liveConfig.chyronCadenceSec * 1000).toISOString();
+  const nextBatchAtMs = Date.now() + liveConfig.chyronCadenceSec * 1000;
+  const nextBatchAt = new Date(nextBatchAtMs).toISOString();
+  const nextBatchAtUnix = nextBatchAtMs / 1000;
   const skipTexts = new Set([...approved, ...rejected].map((text) => text.trim().toUpperCase()));
   const optionRows = buildChyronOptionRows(parsed.chyronOptions, batchId, session.id, skipTexts);
   const nextSessionSummary = sessionSummary || session.session_summary;
@@ -367,13 +397,13 @@ async function maybeGenerateChyrons(
       verbatimCaption,
       recentSummary,
       chyronCadenceSec: liveConfig.chyronCadenceSec,
-      nextBatchAt: Date.parse(nextBatchAt) / 1000,
+      nextBatchAt: nextBatchAtUnix,
     });
     await publishSessionEvent(supabase, session.id, "usage.update", {
       type: "usage.update",
       ...usagePayload(updated),
     });
-    return;
+    return { generated: true, nextBatchAt: nextBatchAtUnix };
   }
 
   const { error: batchError } = await supabase.from("chyron_batches").insert({
@@ -419,12 +449,13 @@ async function maybeGenerateChyrons(
     verbatimCaption,
     recentSummary,
     chyronCadenceSec: liveConfig.chyronCadenceSec,
-    nextBatchAt: Date.parse(nextBatchAt) / 1000,
+    nextBatchAt: nextBatchAtUnix,
   });
   await publishSessionEvent(supabase, session.id, "usage.update", {
     type: "usage.update",
     ...usagePayload(updated),
   });
+  return { generated: true, nextBatchAt: nextBatchAtUnix };
 }
 
 async function transcribeChunk(openai: OpenAI, wav: Buffer, sessionId: string) {

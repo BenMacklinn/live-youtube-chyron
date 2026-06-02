@@ -172,6 +172,15 @@ export async function setGuestContext(sessionId: string, name: string, company: 
   await postSessionAction(sessionId, "guidance", { name, company });
 }
 
+export async function generateChyronsNow(sessionId: string) {
+  const res = await fetch(`/api/sessions/${sessionId}/generate`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to generate chyrons");
+  }
+  return res.json() as Promise<{ status: string; nextBatchAt?: number }>;
+}
+
 async function postSessionAction(sessionId: string, action: string, payload: object) {
   const res = await fetch(`/api/sessions/${sessionId}/${action}`, {
     method: "POST",

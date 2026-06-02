@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LiveTranscript } from "@/components/LiveTranscript";
 import { ChyronSuggestions } from "@/components/ChyronSuggestions";
-import { RecentSummary } from "@/components/RecentSummary";
 import type { ChyronSuggestions as ChyronSuggestionsType } from "@/lib/api";
 
 type Props = {
@@ -12,6 +11,8 @@ type Props = {
   suggestions: ChyronSuggestionsType | null;
   onApprove: (id: string, text: string) => void;
   onReject: (id: string, text: string) => void;
+  onGenerateNow?: () => void | Promise<void>;
+  generating?: boolean;
   disabled?: boolean;
   isRunning?: boolean;
   nextBatchAt?: number | null;
@@ -23,6 +24,8 @@ export function TranscriptChyronColumns({
   suggestions,
   onApprove,
   onReject,
+  onGenerateNow,
+  generating,
   disabled,
   isRunning,
   nextBatchAt,
@@ -40,17 +43,18 @@ export function TranscriptChyronColumns({
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [suggestions, isRunning, nextBatchAt]);
+  }, [suggestions, isRunning, nextBatchAt, generating]);
 
   return (
-    <div className="grid items-start gap-6 xl:grid-cols-3 lg:grid-cols-2">
+    <div className="grid items-start gap-6 lg:grid-cols-2">
       <LiveTranscript segments={segments} partial={partial} maxHeight={chyronHeight ?? undefined} />
-      <RecentSummary summary={suggestions?.recentSummary} isRunning={isRunning} />
-      <div ref={chyronRef} className="h-fit lg:col-span-2 xl:col-span-1">
+      <div ref={chyronRef} className="h-fit">
         <ChyronSuggestions
           suggestions={suggestions}
           onApprove={onApprove}
           onReject={onReject}
+          onGenerateNow={onGenerateNow}
+          generating={generating}
           disabled={disabled}
           isRunning={isRunning}
           nextBatchAt={nextBatchAt}

@@ -11,6 +11,7 @@ import {
   approveChyron,
   clearSessionContext,
   createSession,
+  generateChyronsNow,
   getSessionSnapshot,
   rejectChyron,
   setGuestContext,
@@ -48,6 +49,7 @@ export default function Home() {
   const [approvedLog, setApprovedLog] = useState<ApprovedLogEntry[]>([]);
   const [usage, setUsage] = useState<UsageStats | null>(null);
   const [starting, setStarting] = useState(false);
+  const [generatingChyrons, setGeneratingChyrons] = useState(false);
   const [contextNotice, setContextNotice] = useState("");
   const [nextChyronBatchAt, setNextChyronBatchAt] = useState<number | null>(null);
   const [liveConnection, setLiveConnection] = useState<"idle" | "connecting" | "live" | "reconnecting">("idle");
@@ -390,6 +392,22 @@ export default function Home() {
     }
   }, [sessionId, applyContextClearedLocally]);
 
+  const handleGenerateNow = async () => {
+    if (!sessionId) return;
+    setGeneratingChyrons(true);
+    setError(null);
+    try {
+      const result = await generateChyronsNow(sessionId);
+      if (result.nextBatchAt) {
+        setNextChyronBatchAt(result.nextBatchAt);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate chyrons");
+    } finally {
+      setGeneratingChyrons(false);
+    }
+  };
+
   const handleClearGuest = async () => {
     if (!sessionId) return;
     if (!guestContext.name && !guestContext.company && !guestDraft.name.trim() && !guestDraft.company.trim()) {
@@ -497,6 +515,8 @@ export default function Home() {
           suggestions={suggestions}
           onApprove={handleApprove}
           onReject={handleReject}
+          onGenerateNow={() => void handleGenerateNow()}
+          generating={generatingChyrons}
           disabled={!isRunning && status !== "ended"}
           isRunning={isRunning}
           nextBatchAt={nextChyronBatchAt}
