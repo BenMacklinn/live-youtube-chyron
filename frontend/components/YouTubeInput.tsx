@@ -2,12 +2,9 @@
 
 import type { AudioInputDevice } from "@/lib/use-audio-input-devices";
 
-export const STREAM_INPUT_ID = "stream";
-
 type Props = {
-  sourceUrl?: string;
-  selectedInputId: string;
-  onInputChange: (inputId: string) => void;
+  selectedMicDeviceId: string | null;
+  onMicDeviceChange: (deviceId: string) => void;
   micDevices?: AudioInputDevice[];
   micDevicesLoading?: boolean;
   micDevicesError?: string | null;
@@ -19,9 +16,8 @@ type Props = {
 };
 
 export function YouTubeInput({
-  sourceUrl,
-  selectedInputId,
-  onInputChange,
+  selectedMicDeviceId,
+  onMicDeviceChange,
   micDevices = [],
   micDevicesLoading = false,
   micDevicesError,
@@ -31,22 +27,18 @@ export function YouTubeInput({
   isRunning,
   disabled,
 }: Props) {
-  const usingStream = selectedInputId === STREAM_INPUT_ID;
-  const startReady = usingStream || Boolean(selectedInputId);
-
   return (
     <div className="flex flex-wrap items-center gap-2 border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
       <label className="flex min-w-[12rem] flex-1 items-center gap-2">
-        <span className="sr-only">Audio input</span>
+        <span className="text-[11px] font-medium text-zinc-500">Mic</span>
         <select
-          value={selectedInputId}
-          onChange={(event) => onInputChange(event.target.value)}
-          disabled={disabled || isRunning}
+          value={selectedMicDeviceId ?? ""}
+          onChange={(event) => onMicDeviceChange(event.target.value)}
+          disabled={disabled || isRunning || micDevicesLoading || micDevices.length === 0}
           className="min-w-0 flex-1 border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs text-zinc-900 focus:border-zinc-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
         >
-          <option value={STREAM_INPUT_ID}>Live Stream</option>
           {micDevices.length === 0 ? (
-            <option value="" disabled>
+            <option value="">
               {micDevicesLoading ? "Detecting microphones…" : "No microphones found"}
             </option>
           ) : (
@@ -68,12 +60,6 @@ export function YouTubeInput({
         Refresh
       </button>
 
-      {sourceUrl && usingStream && (
-        <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-400">
-          <span className="font-mono">{sourceUrl}</span>
-        </p>
-      )}
-
       {micDevicesError && (
         <p className="text-[11px] text-red-600 dark:text-red-400">{micDevicesError}</p>
       )}
@@ -82,10 +68,10 @@ export function YouTubeInput({
         <button
           type="button"
           onClick={onStart}
-          disabled={disabled || !startReady}
+          disabled={disabled || !selectedMicDeviceId}
           className="ml-auto shrink-0 bg-green-800 px-3 py-1 text-xs font-medium text-white hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {usingStream ? "Start Stream" : "Start Mic"}
+          Start
         </button>
       ) : (
         <button

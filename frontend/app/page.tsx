@@ -23,7 +23,7 @@ import {
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { useAudioInputDevices } from "@/lib/use-audio-input-devices";
-import { STREAM_INPUT_ID, YouTubeInput } from "@/components/YouTubeInput";
+import { YouTubeInput } from "@/components/YouTubeInput";
 
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
 const MIC_CHUNK_MS = 2_500;
@@ -33,8 +33,6 @@ function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
 }
 
 export default function Home() {
-  const [url, setUrl] = useState("");
-  const [selectedInputId, setSelectedInputId] = useState(STREAM_INPUT_ID);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +59,8 @@ export default function Home() {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const {
     devices: micDevices,
+    selectedDeviceId: selectedMicDeviceId,
+    setSelectedDeviceId: setSelectedMicDeviceId,
     isLoading: micDevicesLoading,
     error: micDevicesError,
     refresh: refreshMicDevices,
@@ -152,7 +152,6 @@ export default function Home() {
         if (cancelled) return;
         setStatus(snapshot.status);
         setGenerationMode(snapshot.generationMode);
-        setUrl(snapshot.youtubeUrl);
         setSegments(snapshot.segments);
         setPartial("");
         setSuggestions(snapshot.latestSuggestions);
@@ -290,13 +289,10 @@ export default function Home() {
     setGuestDraft(emptyGuestContext());
 
     try {
-      if (selectedInputId === STREAM_INPUT_ID) {
-        const { sessionId: id } = await createSession("", undefined, 0, generationMode, "stream");
-        setSessionId(id);
-        setStatus("connecting");
-      } else {
-        await startMicrophoneCapture(selectedInputId);
+      if (!selectedMicDeviceId) {
+        throw new Error("Select a microphone input device before starting.");
       }
+      await startMicrophoneCapture(selectedMicDeviceId);
     } catch (e) {
       stopMicrophoneCapture();
       setError(e instanceof Error ? e.message : "Failed to start");
@@ -439,9 +435,8 @@ export default function Home() {
         </header>
 
         <YouTubeInput
-          sourceUrl={url}
-          selectedInputId={selectedInputId}
-          onInputChange={setSelectedInputId}
+          selectedMicDeviceId={selectedMicDeviceId}
+          onMicDeviceChange={setSelectedMicDeviceId}
           micDevices={micDevices}
           micDevicesLoading={micDevicesLoading}
           micDevicesError={micDevicesError}
