@@ -10,14 +10,14 @@ type Props = {
 
 export function GenerationModeToggle({ mode, onChange, disabled }: Props) {
   return (
-    <div className="inline-flex rounded-lg border border-zinc-300 p-1 dark:border-zinc-700">
+    <div className="inline-flex shrink-0 border border-zinc-300 p-0.5 dark:border-zinc-700">
       <button
         type="button"
         disabled={disabled}
         onClick={() => onChange("timeline")}
-        className={`rounded-md px-4 py-2 text-sm font-medium transition ${
+        className={`px-3 py-1 text-xs font-medium transition ${
           mode === "timeline"
-            ? "bg-blue-600 text-white"
+            ? "bg-green-800 text-white"
             : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
         }`}
       >
@@ -27,9 +27,9 @@ export function GenerationModeToggle({ mode, onChange, disabled }: Props) {
         type="button"
         disabled={disabled}
         onClick={() => onChange("guest")}
-        className={`rounded-md px-4 py-2 text-sm font-medium transition ${
+        className={`px-3 py-1 text-xs font-medium transition ${
           mode === "guest"
-            ? "bg-blue-600 text-white"
+            ? "bg-green-800 text-white"
             : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
         }`}
       >

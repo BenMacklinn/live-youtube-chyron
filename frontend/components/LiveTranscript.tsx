@@ -5,10 +5,9 @@ import { useEffect, useRef } from "react";
 type Props = {
   segments: string[];
   partial: string;
-  maxHeight?: number;
 };
 
-export function LiveTranscript({ segments, partial, maxHeight }: Props) {
+export function LiveTranscript({ segments, partial }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -17,23 +16,20 @@ export function LiveTranscript({ segments, partial, maxHeight }: Props) {
     el.scrollTop = el.scrollHeight;
   }, [segments, partial]);
 
-  const boxStyle =
-    maxHeight != null ? { height: maxHeight, maxHeight } : { minHeight: 320 };
-
   return (
-    <section
-      className="flex flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
-      style={boxStyle}
-    >
-      <header className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Live Transcript</h2>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <header className="shrink-0 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Live Transcript</h2>
       </header>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4 text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto p-3 text-xs leading-relaxed text-zinc-800 dark:text-zinc-200"
+      >
         {segments.length === 0 && !partial && (
           <p className="text-zinc-400">Transcript will appear here once audio is processed…</p>
         )}
         {segments.map((segment, i) => (
-          <p key={`${i}-${segment.slice(0, 24)}`} className="mb-2">
+          <p key={`${i}-${segment.slice(0, 24)}`} className="mb-1.5">
             {segment}
           </p>
         ))}

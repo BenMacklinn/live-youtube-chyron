@@ -60,23 +60,23 @@ function ChyronCountdown({
   if (generating) {
     label = "Generating…";
   } else if (hasSuggestions && secondsUntilNext !== null) {
-    label = secondsUntilNext > 0 ? `Next chyron batch in ${secondsUntilNext}s` : "Generating next batch…";
+    label = secondsUntilNext > 0 ? `Next batch in ${secondsUntilNext}s` : "Generating next batch…";
   }
 
   return (
-    <footer className="shrink-0 border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
-      <div className="flex items-center gap-3">
+    <footer className="shrink-0 border-t border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+      <div className="flex items-center gap-2">
         {onGenerateNow ? (
           <button
             type="button"
             disabled={disabled || generating}
             onClick={() => void onGenerateNow()}
-            className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            className="shrink-0 border border-zinc-300 px-2 py-1 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
           >
             {generating ? "Generating…" : "Generate now"}
           </button>
         ) : null}
-        <p className="flex-1 text-center text-xs font-medium tabular-nums text-zinc-500">{label}</p>
+        <p className="flex-1 truncate text-center text-[11px] font-medium tabular-nums text-zinc-500">{label}</p>
       </div>
     </footer>
   );
@@ -96,27 +96,6 @@ export function ChyronSuggestions({
   const [editText, setEditText] = useState("");
   const secondsUntilNext = useSecondsUntil(nextBatchAt, isRunning && !generating);
 
-  if (!suggestions) {
-    return (
-      <section className="flex min-h-[320px] flex-col rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-        <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Chyron Suggestions</h2>
-        </header>
-        <div className="flex flex-1 items-center justify-center p-4 text-sm text-zinc-400">
-          Waiting for first batch…
-        </div>
-        <ChyronCountdown
-          isRunning={isRunning}
-          hasSuggestions={false}
-          secondsUntilNext={secondsUntilNext}
-          onGenerateNow={onGenerateNow}
-          generating={generating}
-          disabled={disabled}
-        />
-      </section>
-    );
-  }
-
   const startEdit = (opt: ChyronOption) => {
     setEditingId(opt.id);
     setEditText(opt.text);
@@ -129,94 +108,90 @@ export function ChyronSuggestions({
   };
 
   return (
-    <section className="flex min-h-[320px] flex-col rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-      <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">Chyron Suggestions</h2>
-        {suggestions.topic && (
-          <p className="mt-1 text-xs text-zinc-500">
-            Topic: {suggestions.topic}
-            {(suggestions.entities?.length ?? 0) > 0 && ` · ${suggestions.entities.join(", ")}`}
-          </p>
-        )}
-        {suggestions.sessionSummary && (
-          <p className="mt-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            <span className="font-medium text-zinc-500">Session context: </span>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <header className="shrink-0 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Chyron Suggestions</h2>
+        {suggestions?.sessionSummary && (
+          <p className="mt-0.5 line-clamp-1 text-[11px] text-zinc-500" title={suggestions.sessionSummary}>
             {suggestions.sessionSummary}
           </p>
         )}
       </header>
-      <div className="space-y-3 p-4">
-        {(suggestions.chyronOptions?.length ?? 0) === 0 ? (
-          <p className="text-sm text-zinc-400">
-            No chyrons in this batch — summary updated, retrying on the next cadence…
-          </p>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {!suggestions ? (
+          <p className="flex h-full items-center justify-center text-xs text-zinc-400">Waiting for first batch…</p>
+        ) : (suggestions.chyronOptions?.length ?? 0) === 0 ? (
+          <p className="text-xs text-zinc-400">No chyrons in this batch — retrying on next cadence…</p>
         ) : (
-          suggestions.chyronOptions.map((opt) => (
-          <div key={opt.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-            {editingId === opt.id ? (
-              <div className="space-y-2">
-                <input
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  maxLength={39}
-                  className="w-full rounded border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => submitEdit(opt.id)}
-                    className="rounded bg-green-600 px-3 py-1 text-xs text-white"
-                  >
-                    Save & Approve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(null)}
-                    className="rounded border px-3 py-1 text-xs"
-                  >
-                    Cancel
-                  </button>
-                </div>
+          <div className="space-y-2">
+            {suggestions.chyronOptions.map((opt) => (
+              <div key={opt.id} className="border border-zinc-200 p-2 dark:border-zinc-700">
+                {editingId === opt.id ? (
+                  <div className="space-y-1.5">
+                    <input
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      maxLength={39}
+                      className="w-full border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+                    />
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => submitEdit(opt.id)}
+                        className="bg-green-800 px-2 py-0.5 text-[11px] text-white"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className="border px-2 py-0.5 text-[11px]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-mono text-xs font-semibold tracking-wide">{opt.text}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onApprove(opt.id, opt.text)}
+                        className="bg-green-800 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-green-900 disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => startEdit(opt)}
+                        className="border border-zinc-300 px-2 py-0.5 text-[11px] hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onReject(opt.id, opt.text)}
+                        className="border border-red-200 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
-            ) : (
-              <>
-                <p className="font-mono text-sm font-semibold tracking-wide">{opt.text}</p>
-                {opt.rationale && <p className="mt-1 text-xs text-zinc-500">{opt.rationale}</p>}
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onApprove(opt.id, opt.text)}
-                    className="rounded bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => startEdit(opt)}
-                    className="rounded border border-zinc-300 px-3 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-900"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => onReject(opt.id, opt.text)}
-                    className="rounded border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </>
-            )}
+            ))}
           </div>
-        ))
         )}
       </div>
+
       <ChyronCountdown
         isRunning={isRunning}
-        hasSuggestions
+        hasSuggestions={Boolean(suggestions)}
         secondsUntilNext={secondsUntilNext}
         onGenerateNow={onGenerateNow}
         generating={generating}

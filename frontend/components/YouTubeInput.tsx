@@ -1,15 +1,14 @@
 "use client";
 
-import type { AudioSourceMode } from "@/lib/api";
 import type { AudioInputDevice } from "@/lib/use-audio-input-devices";
+
+export const STREAM_INPUT_ID = "stream";
 
 type Props = {
   sourceUrl?: string;
-  sourceMode: AudioSourceMode;
-  onSourceModeChange: (mode: AudioSourceMode) => void;
+  selectedInputId: string;
+  onInputChange: (inputId: string) => void;
   micDevices?: AudioInputDevice[];
-  selectedMicDeviceId?: string | null;
-  onMicDeviceChange?: (deviceId: string) => void;
   micDevicesLoading?: boolean;
   micDevicesError?: string | null;
   onRefreshMicDevices?: () => void;
@@ -21,11 +20,9 @@ type Props = {
 
 export function YouTubeInput({
   sourceUrl,
-  sourceMode,
-  onSourceModeChange,
+  selectedInputId,
+  onInputChange,
   micDevices = [],
-  selectedMicDeviceId,
-  onMicDeviceChange,
   micDevicesLoading = false,
   micDevicesError,
   onRefreshMicDevices,
@@ -34,108 +31,71 @@ export function YouTubeInput({
   isRunning,
   disabled,
 }: Props) {
-  const micReady = sourceMode !== "microphone" || Boolean(selectedMicDeviceId);
+  const usingStream = selectedInputId === STREAM_INPUT_ID;
+  const startReady = usingStream || Boolean(selectedInputId);
+
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Audio source</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              {sourceMode === "microphone"
-                ? "Browser microphone chunks sent for transcription"
-                : "Daily HLS via newsmax-delta resolver"}
-            </p>
-          </div>
-          <div className="inline-flex rounded-lg border border-zinc-300 p-1 dark:border-zinc-700">
-            <button
-              type="button"
-              disabled={disabled || isRunning}
-              onClick={() => onSourceModeChange("stream")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition ${
-                sourceMode === "stream"
-                  ? "bg-blue-600 text-white"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              HLS
-            </button>
-            <button
-              type="button"
-              disabled={disabled || isRunning}
-              onClick={() => onSourceModeChange("microphone")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition ${
-                sourceMode === "microphone"
-                  ? "bg-blue-600 text-white"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              Mic
-            </button>
-          </div>
-          {sourceUrl && sourceMode === "stream" && (
-            <p className="break-all text-xs text-zinc-400">
-              Active source: <span className="font-mono">{sourceUrl}</span>
-            </p>
+    <div className="flex flex-wrap items-center gap-2 border border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+      <label className="flex min-w-[12rem] flex-1 items-center gap-2">
+        <span className="sr-only">Audio input</span>
+        <select
+          value={selectedInputId}
+          onChange={(event) => onInputChange(event.target.value)}
+          disabled={disabled || isRunning}
+          className="min-w-0 flex-1 border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs text-zinc-900 focus:border-zinc-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+        >
+          <option value={STREAM_INPUT_ID}>Live Stream</option>
+          {micDevices.length === 0 ? (
+            <option value="" disabled>
+              {micDevicesLoading ? "Detecting microphones…" : "No microphones found"}
+            </option>
+          ) : (
+            micDevices.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))
           )}
-          {sourceMode === "microphone" && (
-            <div className="space-y-2">
-              <label className="block">
-                <span className="text-xs font-medium text-zinc-500">Input device</span>
-                <select
-                  value={selectedMicDeviceId ?? ""}
-                  onChange={(event) => onMicDeviceChange?.(event.target.value)}
-                  disabled={disabled || isRunning || micDevicesLoading || micDevices.length === 0}
-                  className="mt-1 w-full max-w-md rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                >
-                  {micDevices.length === 0 ? (
-                    <option value="">
-                      {micDevicesLoading ? "Detecting microphones…" : "No microphones found"}
-                    </option>
-                  ) : (
-                    micDevices.map((device) => (
-                      <option key={device.deviceId} value={device.deviceId}>
-                        {device.label}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onRefreshMicDevices?.()}
-                  disabled={disabled || isRunning || micDevicesLoading}
-                  className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                >
-                  {micDevicesLoading ? "Refreshing…" : "Refresh devices"}
-                </button>
-                {micDevicesError && (
-                  <p className="text-xs text-red-600 dark:text-red-400">{micDevicesError}</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-        {!isRunning ? (
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={disabled || !micReady}
-            className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {sourceMode === "microphone" ? "Start Mic" : "Start Stream"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onStop}
-            className="rounded-lg bg-red-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-red-700"
-          >
-            Stop
-          </button>
-        )}
-      </div>
+        </select>
+      </label>
+
+      <button
+        type="button"
+        onClick={() => onRefreshMicDevices?.()}
+        disabled={disabled || isRunning || micDevicesLoading}
+        className="shrink-0 border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+      >
+        Refresh
+      </button>
+
+      {sourceUrl && usingStream && (
+        <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-400">
+          <span className="font-mono">{sourceUrl}</span>
+        </p>
+      )}
+
+      {micDevicesError && (
+        <p className="text-[11px] text-red-600 dark:text-red-400">{micDevicesError}</p>
+      )}
+
+      {!isRunning ? (
+        <button
+          type="button"
+          onClick={onStart}
+          disabled={disabled || !startReady}
+          className="ml-auto shrink-0 bg-green-800 px-3 py-1 text-xs font-medium text-white hover:bg-green-900 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {usingStream ? "Start Stream" : "Start Mic"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onStop}
+          className="ml-auto shrink-0 bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
+        >
+          Stop
+        </button>
+      )}
     </div>
   );
 }

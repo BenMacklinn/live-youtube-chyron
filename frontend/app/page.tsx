@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApprovedTextOutput } from "@/components/ApprovedTextOutput";
 import { TranscriptChyronColumns } from "@/components/TranscriptChyronColumns";
 import { GenerationModeToggle } from "@/components/GenerationModeToggle";
 import { UsagePanel } from "@/components/UsagePanel";
 import { ProducerGuidance, type GuestContextDraft } from "@/components/ProducerGuidance";
-import { YouTubeInput } from "@/components/YouTubeInput";
 import {
   approveChyron,
   clearSessionContext,
@@ -18,8 +16,6 @@ import {
   setChyronGenerationMode,
   stopSession,
   uploadMicrophoneChunk,
-  type ApprovedLogEntry,
-  type AudioSourceMode,
   type ChyronGenerationMode,
   type ChyronSuggestions as ChyronSuggestionsType,
   type LiveMessage,
@@ -27,6 +23,7 @@ import {
 } from "@/lib/api";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { useAudioInputDevices } from "@/lib/use-audio-input-devices";
+import { STREAM_INPUT_ID, YouTubeInput } from "@/components/YouTubeInput";
 
 const emptyGuestContext = (): GuestContextDraft => ({ name: "", company: "" });
 const MIC_CHUNK_MS = 2_500;
@@ -37,7 +34,7 @@ function guestContextsEqual(a: GuestContextDraft, b: GuestContextDraft) {
 
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [sourceMode, setSourceMode] = useState<AudioSourceMode>("stream");
+  const [selectedInputId, setSelectedInputId] = useState(STREAM_INPUT_ID);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +42,6 @@ export default function Home() {
   const [segments, setSegments] = useState<string[]>([]);
   const [partial, setPartial] = useState("");
   const [suggestions, setSuggestions] = useState<ChyronSuggestionsType | null>(null);
-  const [activeChyron, setActiveChyron] = useState("");
-  const [approvedLog, setApprovedLog] = useState<ApprovedLogEntry[]>([]);
   const [usage, setUsage] = useState<UsageStats | null>(null);
   const [starting, setStarting] = useState(false);
   const [generatingChyrons, setGeneratingChyrons] = useState(false);
@@ -66,12 +61,10 @@ export default function Home() {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const {
     devices: micDevices,
-    selectedDeviceId: selectedMicDeviceId,
-    setSelectedDeviceId: setSelectedMicDeviceId,
     isLoading: micDevicesLoading,
     error: micDevicesError,
     refresh: refreshMicDevices,
-  } = useAudioInputDevices(sourceMode === "microphone");
+  } = useAudioInputDevices(true);
 
   const isRunning = status === "connecting" || status === "transcribing";
 
@@ -113,12 +106,6 @@ export default function Home() {
         }
         break;
       }
-      case "chyron.approved":
-        setActiveChyron(msg.text);
-        break;
-      case "chyron.log":
-        setApprovedLog((log) => [...log, { text: msg.text, timestamp: msg.timestamp }]);
-        break;
       case "generation_mode.changed":
         setGenerationMode(msg.generationMode);
         break;
@@ -169,8 +156,6 @@ export default function Home() {
         setSegments(snapshot.segments);
         setPartial("");
         setSuggestions(snapshot.latestSuggestions);
-        setActiveChyron(snapshot.activeChyron);
-        setApprovedLog(snapshot.approvedLog);
         setUsage(snapshot.usage);
         setError(snapshot.error);
         setGuestContextState({ name: snapshot.guestName, company: snapshot.guestCompany });
@@ -298,8 +283,6 @@ export default function Home() {
     setSegments([]);
     setPartial("");
     setSuggestions(null);
-    setActiveChyron("");
-    setApprovedLog([]);
     setUsage(null);
     setContextNotice("");
     setNextChyronBatchAt(null);
@@ -307,15 +290,12 @@ export default function Home() {
     setGuestDraft(emptyGuestContext());
 
     try {
-      if (sourceMode === "microphone") {
-        if (!selectedMicDeviceId) {
-          throw new Error("Select a microphone input device before starting.");
-        }
-        await startMicrophoneCapture(selectedMicDeviceId);
-      } else {
+      if (selectedInputId === STREAM_INPUT_ID) {
         const { sessionId: id } = await createSession("", undefined, 0, generationMode, "stream");
         setSessionId(id);
         setStatus("connecting");
+      } else {
+        await startMicrophoneCapture(selectedInputId);
       }
     } catch (e) {
       stopMicrophoneCapture();
@@ -348,7 +328,6 @@ export default function Home() {
   };
 
   const handleApprove = async (id: string, text: string) => {
-    setActiveChyron(text);
     if (!sessionId) return;
     try {
       await approveChyron(sessionId, id, text);
@@ -450,22 +429,20 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8">
-        <header>
-          <h1 className="text-2xl font-bold tracking-tight">Live Stream Chyron Pipeline</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Start live HLS or microphone input and generate broadcast chyron suggestions every 8 seconds.
-          </p>
+    <div className="flex h-full flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <main className="mx-auto flex h-full w-full max-w-7xl flex-col gap-2 overflow-hidden px-3 py-2">
+        <header className="flex shrink-0 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-bold tracking-tight">Live Stream Chyron Pipeline</h1>
+          </div>
+          <UsagePanel usage={usage} />
         </header>
 
         <YouTubeInput
           sourceUrl={url}
-          sourceMode={sourceMode}
-          onSourceModeChange={setSourceMode}
+          selectedInputId={selectedInputId}
+          onInputChange={setSelectedInputId}
           micDevices={micDevices}
-          selectedMicDeviceId={selectedMicDeviceId}
-          onMicDeviceChange={setSelectedMicDeviceId}
           micDevicesLoading={micDevicesLoading}
           micDevicesError={micDevicesError}
           onRefreshMicDevices={() => void refreshMicDevices()}
@@ -475,42 +452,41 @@ export default function Home() {
           disabled={starting}
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <GenerationModeToggle
-              mode={generationMode}
-              onChange={handleGenerationModeChange}
-              disabled={starting}
-            />
-            <button
-              type="button"
-              onClick={() => void handleClearContext()}
-              disabled={!isRunning}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-            >
-              Clear Context
-            </button>
-          </div>
-          <p className="text-sm text-zinc-500">
-            Status: <span className="font-medium capitalize text-zinc-800 dark:text-zinc-200">{status}</span>
-            {sessionId && <span className="ml-2 font-mono text-xs text-zinc-400">({sessionId.slice(0, 8)}…)</span>}
-            {sessionId && <span className="ml-2 capitalize text-zinc-400">Live: {liveConnection}</span>}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <GenerationModeToggle
+            mode={generationMode}
+            onChange={handleGenerationModeChange}
+            disabled={starting}
+          />
+          <button
+            type="button"
+            onClick={() => void handleClearContext()}
+            disabled={!isRunning}
+            className="border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            Clear Context
+          </button>
+          <p className="ml-auto truncate text-xs text-zinc-500">
+            <span className="capitalize">{status}</span>
+            {sessionId && <span className="ml-2 font-mono text-zinc-400">({sessionId.slice(0, 8)}…)</span>}
+            {sessionId && <span className="ml-2 capitalize text-zinc-400">{liveConnection}</span>}
           </p>
         </div>
 
-        {contextNotice && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
-            {contextNotice}
+        {(contextNotice || error) && (
+          <div className="shrink-0 space-y-1">
+            {contextNotice && (
+              <div className="border border-green-200 bg-green-50 px-3 py-1 text-xs text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300">
+                {contextNotice}
+              </div>
+            )}
+            {error && (
+              <div className="border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
+                {error}
+              </div>
+            )}
           </div>
         )}
-
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
-            {error}
-          </div>
-        )}
-
-        <UsagePanel usage={usage} />
 
         <ProducerGuidance
           value={guestDraft}
@@ -543,8 +519,6 @@ export default function Home() {
           isRunning={isRunning}
           nextBatchAt={nextChyronBatchAt}
         />
-
-        <ApprovedTextOutput activeChyron={activeChyron} log={approvedLog} />
       </main>
     </div>
   );
