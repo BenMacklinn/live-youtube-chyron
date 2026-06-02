@@ -5,6 +5,37 @@ export type GuestContextDraft = {
   company: string;
 };
 
+const GUEST_FIELD_MAX_CHARS = 120;
+
+/** Split a Sheets paste (tab or wide whitespace gap) into name + company. */
+function splitGuestPaste(text: string): GuestContextDraft | null {
+  const trimmed = text.replace(/\r\n/g, "\n").trim();
+  if (!trimmed) return null;
+
+  const firstLine = trimmed.split("\n")[0]?.trim() ?? trimmed;
+
+  if (firstLine.includes("\t")) {
+    const parts = firstLine.split("\t").map((part) => part.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      return {
+        name: parts[0].slice(0, GUEST_FIELD_MAX_CHARS),
+        company: parts.slice(1).join(" ").slice(0, GUEST_FIELD_MAX_CHARS),
+      };
+    }
+    return null;
+  }
+
+  const wideGap = firstLine.match(/^(.+?)\s{2,}(.+)$/);
+  if (wideGap) {
+    return {
+      name: wideGap[1].trim().slice(0, GUEST_FIELD_MAX_CHARS),
+      company: wideGap[2].trim().slice(0, GUEST_FIELD_MAX_CHARS),
+    };
+  }
+
+  return null;
+}
+
 type Props = {
   value: GuestContextDraft;
   onChange: (value: GuestContextDraft) => void;
@@ -33,6 +64,14 @@ export function ProducerGuidance({
     }
   };
 
+  const handleNamePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const split = splitGuestPaste(e.clipboardData.getData("text"));
+    if (!split) return;
+
+    e.preventDefault();
+    onChange(split);
+  };
+
   return (
     <section className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
       <header className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
@@ -53,9 +92,10 @@ export function ProducerGuidance({
             type="text"
             value={value.name}
             onChange={(e) => onChange({ ...value, name: e.target.value })}
+            onPaste={handleNamePaste}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            maxLength={120}
+            maxLength={GUEST_FIELD_MAX_CHARS}
             placeholder="e.g. Tae Kim"
             className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
           />
@@ -68,15 +108,17 @@ export function ProducerGuidance({
             onChange={(e) => onChange({ ...value, company: e.target.value })}
             onKeyDown={handleKeyDown}
             disabled={disabled}
-            maxLength={120}
+            maxLength={GUEST_FIELD_MAX_CHARS}
             placeholder="e.g. TBPN"
             className="mt-1 w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
           />
         </label>
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <p className="text-xs text-zinc-400">
-            Press <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Enter</kbd> in either field to apply.
-          </p>
+            <p className="text-xs text-zinc-400">
+              Paste name + company from Sheets into Name (tab or wide gap splits fields). Press{" "}
+              <kbd className="rounded border border-zinc-300 px-1 font-mono text-[10px] dark:border-zinc-600">Enter</kbd>{" "}
+              in either field to apply.
+            </p>
           <div className="flex gap-2">
             <button
               type="button"

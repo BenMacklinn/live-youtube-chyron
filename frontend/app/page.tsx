@@ -61,6 +61,8 @@ export default function Home() {
   const microphoneQueueRef = useRef<Promise<void>>(Promise.resolve());
   const microphoneCaptureActiveRef = useRef(false);
   const recordMicrophoneSliceRef = useRef<(sessionId: string, stream: MediaStream, mimeType: string) => void>(() => {});
+  const generatingChyronsRef = useRef(false);
+  const pendingNextBatchAtRef = useRef<number | null>(null);
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const {
     devices: micDevices,
@@ -72,6 +74,10 @@ export default function Home() {
   } = useAudioInputDevices(sourceMode === "microphone");
 
   const isRunning = status === "connecting" || status === "transcribing";
+
+  useEffect(() => {
+    generatingChyronsRef.current = generatingChyrons;
+  }, [generatingChyrons]);
 
   const handleMessage = useCallback((msg: LiveMessage) => {
     switch (msg.type) {
@@ -99,9 +105,12 @@ export default function Home() {
           verbatimCaption: msg.verbatimCaption || prev?.verbatimCaption || "",
           recentSummary: msg.recentSummary || prev?.recentSummary || "",
         }));
-        setNextChyronBatchAt(
-          msg.nextBatchAt ?? Date.now() / 1000 + (msg.chyronCadenceSec ?? 8),
-        );
+        const nextBatchAt = msg.nextBatchAt ?? Date.now() / 1000 + (msg.chyronCadenceSec ?? 8);
+        if (generatingChyronsRef.current) {
+          pendingNextBatchAtRef.current = nextBatchAt;
+        } else {
+          setNextChyronBatchAt(nextBatchAt);
+        }
         break;
       }
       case "chyron.approved":
@@ -393,18 +402,31 @@ export default function Home() {
   }, [sessionId, applyContextClearedLocally]);
 
   const handleGenerateNow = async () => {
-    if (!sessionId) return;
+    if (!sessionId || generatingChyrons) return;
+    const previousNextBatchAt = nextChyronBatchAt;
     setGeneratingChyrons(true);
+    setNextChyronBatchAt(null);
+    pendingNextBatchAtRef.current = null;
     setError(null);
+    let succeeded = false;
     try {
       const result = await generateChyronsNow(sessionId);
       if (result.nextBatchAt) {
-        setNextChyronBatchAt(result.nextBatchAt);
+        pendingNextBatchAtRef.current = result.nextBatchAt;
       }
+      succeeded = true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate chyrons");
     } finally {
       setGeneratingChyrons(false);
+      if (pendingNextBatchAtRef.current !== null) {
+        setNextChyronBatchAt(pendingNextBatchAtRef.current);
+        pendingNextBatchAtRef.current = null;
+      } else if (succeeded) {
+        setNextChyronBatchAt(Date.now() / 1000 + 8);
+      } else {
+        setNextChyronBatchAt(previousNextBatchAt);
+      }
     }
   };
 

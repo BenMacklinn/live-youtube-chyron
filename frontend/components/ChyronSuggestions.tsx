@@ -57,7 +57,9 @@ function ChyronCountdown({
   if (!isRunning) return null;
 
   let label = "Waiting for first chyron batch…";
-  if (hasSuggestions && secondsUntilNext !== null) {
+  if (generating) {
+    label = "Generating…";
+  } else if (hasSuggestions && secondsUntilNext !== null) {
     label = secondsUntilNext > 0 ? `Next chyron batch in ${secondsUntilNext}s` : "Generating next batch…";
   }
 
@@ -92,7 +94,7 @@ export function ChyronSuggestions({
 }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const secondsUntilNext = useSecondsUntil(nextBatchAt, isRunning);
+  const secondsUntilNext = useSecondsUntil(nextBatchAt, isRunning && !generating);
 
   if (!suggestions) {
     return (
